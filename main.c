@@ -13,10 +13,10 @@
 
 char selected_adc_channel = RED_adc;
 
-uint16_t RED_buffer[10] = { 0 }, GREEN_buffer[10] = { 0 }, BLUE_buffer[10] = { 0 }, RED_value, GREEN_value, BLUE_value;
+uint16_t RED_buffer[10] = { 0 }, GREEN_buffer[10] = { 0 }, BLUE_buffer[10] = { 0 }, RED_value = 0, GREEN_value = 0, BLUE_value = 0;
 uint8_t adc_read_count = 0, int_cnt = 0;
 uint16_t second_counter = 0;
-uint8_t sec, min, hour;
+uint8_t sec, min, hour, adc_hold = 0;
 
 void USART_Transmit( unsigned char data );
 unsigned char USART_Receive( void );
@@ -25,32 +25,37 @@ void USART_text(unsigned char* text);
 
 
 ISR(TIMER0_OVF_vect){
-    if ( ADCSRA & ( 1 << ADIF ) ) {
-        if ( selected_adc_channel == RED_adc ){
-            selected_adc_channel = GREEN_adc;
-            RED_value -= RED_buffer[adc_read_count];
-            RED_buffer[adc_read_count] = ADC;
-            RED_value += ADC;
-            RED_value /= 10;
-        } else if ( selected_adc_channel == GREEN_adc ){
-            selected_adc_channel = BLUE_adc;
-            GREEN_value += GREEN_buffer[adc_read_count];
-            GREEN_buffer[adc_read_count] = ADC;
-            GREEN_value += ADC;
-            GREEN_value /= 10;
+    if ( ADCSRA & ( 1 << ADIF ) ) {         // ADC conversion complete flag
+        if ( adc_hold ) {
+            if ( adc_hold > 3 ) {       // wait with starting new conversion for ca. 6 ms after changing mux
+                ADCSRA |= ( 1 << ADSC ) | ( 1 << ADIF );
+                adc_hold = 0;
+            } else
+                adc_hold++;
         } else {
-            selected_adc_channel = RED_adc;
-            BLUE_value = BLUE_buffer[adc_read_count];
-            BLUE_buffer[adc_read_count] = ADC;
-            BLUE_value += ADC;
-            BLUE_value /= 10;
-            adc_read_count++;
-            if ( adc_read_count > 9){
-                adc_read_count = 0;
-            }                
+            if ( selected_adc_channel == RED_adc ){
+                selected_adc_channel = GREEN_adc;
+                RED_value -= RED_buffer[adc_read_count];
+                RED_buffer[adc_read_count] = ADC;
+                RED_value += RED_buffer[adc_read_count];
+            } else if ( selected_adc_channel == GREEN_adc ){
+                selected_adc_channel = BLUE_adc;
+                GREEN_value -= GREEN_buffer[adc_read_count];
+                GREEN_buffer[adc_read_count] = ADC;
+                GREEN_value += GREEN_buffer[adc_read_count];
+            } else {
+                selected_adc_channel = RED_adc;
+                BLUE_value -= BLUE_buffer[adc_read_count];
+                BLUE_buffer[adc_read_count] = ADC;
+                BLUE_value += BLUE_buffer[adc_read_count];
+                adc_read_count++;
+                if ( adc_read_count > 9){
+                    adc_read_count = 0;
+                }                
+            }
+            ADMUX = ( 1 << REFS0) | ( selected_adc_channel & 0x0F );        // switch ADC mux to other channel
+            adc_hold = 1;       // hold conversion for stable readings
         }
-        ADMUX = ( 1 << REFS0) | ( selected_adc_channel & 0x0F );
-        ADCSRA |= ( 1 << ADSC ) | ( 1 << ADIF );
     }
     if ( int_cnt > 200 ){
         int_cnt = 0;
@@ -59,19 +64,16 @@ ISR(TIMER0_OVF_vect){
         USART_text("\e[2J");
         USART_text("\e[H");
 
-        sprintf(message, "R = 0x%x\n\r", RED_value);
+        sprintf(message, "R = 0x%x\n\r", RED_value / 10);
+        USART_text(message);        
+
+        sprintf(message, "G = 0x%x\n\r", GREEN_value / 10);
         USART_text(message);
 
-        sprintf(message, "G = 0x%x\n\r", GREEN_value);
-        USART_text(message);
-
-        sprintf(message, "B = 0x%x\n\r", BLUE_value);
+        sprintf(message, "B = 0x%x\n\r", BLUE_value / 10);
         USART_text(message);
 
         unsigned char time[24];
-
-        sprintf(time, "sec: %d\n\r", second_counter);
-        USART_text(time);
 
         sprintf(time, "\nRuntime: %d:%d:%d", hour, min, sec);
         USART_text(time);
@@ -129,12 +131,12 @@ void setup(void){
     USART_Init(13);
     DDRB |= ( 1 << PB4 );
     PORTB |= ( 1 << PB4 );
-    DDRC = ( 1 << PC2 ) | ( 1 << PC3 ) | ( 1 << PC3 );
+    DDRC = ( 0 << PC2 ) | ( 0 << PC3 ) | ( 0 << PC3 );
 
     DIDR0 = ( 1 << ADC4D ) | ( 1 << ADC3D ) | ( 1 << ADC2D);
 
     ADMUX = ( 1 << REFS0) | (selected_adc_channel & 0x0F);
-    ADCSRA = ( 1 << ADEN ) | ( 1 << ADSC ) | ( 1 << ADPS2 ); //| ( 1 << ADPS0 );
+    ADCSRA = ( 1 << ADEN ) | ( 1 << ADSC ) | ( 1 << ADPS1 ) | ( 1 << ADPS0 );
 
     TCCR0B = ( 1 << CS01 );     // Setup Timer0 to overflow mode, interrupt on every 2.048 ms
     TIMSK0 = ( 1 << TOIE0 );
