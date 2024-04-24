@@ -19,7 +19,8 @@ compile: ${OBJS}
 
 objcopy: ${BIN}.elf
 		${OBJCOPY} -j .text -j .data -O ihex $< ${BIN}.hex
-		${AVRSIZE} ${BIN}.elf
+		${AVRSIZE} --mcu=${DEVICE} -C -x ${BIN}.elf
+		${AVRSIZE} -B -x ${BIN}.elf --mcu=${DEVICE} -d
 
 #debug:
 #		${AVROBJDUMP} -h -S ${BIN}.elf > ${BIN}.lst

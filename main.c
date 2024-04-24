@@ -1,3 +1,4 @@
+#define __AVR_ATmega48__
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #define F_CPU 1000000UL
@@ -67,16 +68,16 @@ ISR(TIMER0_OVF_vect){
         sprintf(message, "R = 0x%x\n\r", RED_value / 10);
         USART_text(message);        
 
-        sprintf(message, "G = 0x%x\n\r", GREEN_value / 10);
-        USART_text(message);
+        // sprintf(message, "G = 0x%x\n\r", GREEN_value / 10);
+        // USART_text(message);
 
-        sprintf(message, "B = 0x%x\n\r", BLUE_value / 10);
-        USART_text(message);
+        // sprintf(message, "B = 0x%x\n\r", BLUE_value / 10);
+        // USART_text(message);
 
-        unsigned char time[24];
+        // unsigned char time[24];
 
-        sprintf(time, "\nRuntime: %d:%d:%d", hour, min, sec);
-        USART_text(time);
+        // sprintf(time, "\nRuntime: %d:%d:%d", hour, min, sec);
+        // USART_text(time);
     }
     if ( second_counter == 488 ){
         second_counter = 0;
