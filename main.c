@@ -1,20 +1,83 @@
-#define __AVR_ATmega48__
+#define __AVR_ATmega16__
 #include <avr/io.h>
 #include <avr/interrupt.h>
-#define F_CPU 1000000UL
+#define F_CPU 14745600UL
 #include <util/delay.h>
 #include <avr/cpufunc.h>
 #include <string.h>
 #include <stdio.h>
 
-// color sense ADC channels
-#define RED_adc 2
-#define GREEN_adc 3
-#define BLUE_adc 4
+// sense stages ADC channels PORTA
+#define metal_sense_adc 0
+#define glass_sense_adc 1
+#define color_sense_adc 2
 
-char selected_adc_channel = RED_adc;
+/* J1 - Metal stage
+1 - metal sense         (PA0)
+2 - object present 0    (PA4)
+3 - stage 0 motor       (PB3)
+*/
 
-uint16_t RED_buffer[10] = { 0 }, GREEN_buffer[10] = { 0 }, BLUE_buffer[10] = { 0 }, RED_value = 0, GREEN_value = 0, BLUE_value = 0;
+/* J2 - Glass stage
+1 - glass sense         (PA1)
+2 - object present 1    (PA5)
+3 - stage 1 motor       (PD5)
+*/
+
+/* J3 - Color stage
+1 - color sense         (PA2)
+2 - object present 2    (PA6)
+3 - stage 2 motor       (PD7)
+4 - Red LED             (PB0)
+5 - Green LED           (PB1)
+6 - Blue RED            (PB2) 
+7 - White LED           (PA7)
+*/
+
+/* J4 - LCD (HD44780 compatible)
+1 - Gnd
+2 - Vcc
+3 - Contrast
+4 - RS                  (PD3)
+5 - Gnd
+6 - E                   (PD6)
+7 - Gnd
+8 - Gnd
+9 - Gnd
+10 - Gnd
+11 - D4                 (PC0)
+12 - D5                 (PC1)
+13 - D6                 (PC2)
+14 - D7                 (PC3)
+15 - LED +
+16 - LED -
+*/
+
+/* J6 - UART
+1 - Gnd
+2 - RXD                 (PD0)
+3 - TXD                 (PD1)
+*/
+
+/* J7 - Keypad
+1 - R0                  (PC4)
+2 - R1                  (PC5)
+3 - R2                  (PC6)
+4 - R3                  (PC7)
+5 - C0                  (PB4)
+6 - C1                  (PB5)
+7 - C2                  (PB6)
+8 - C3                  (PB7)
+*/
+
+/* J9 - Feed stage
+1 - feed                (PD4)
+2 - feed sense          (PA3)
+*/
+
+char selected_adc_channel = metal_sense_adc;
+
+uint16_t metal_sense_buffer[10] = { 0 }, glass_sense_buffer[10] = { 0 }, color_sense_buffer[10] = { 0 }, metal_sense_value = 0, glass_sense_value = 0, color_sense_value = 0;
 uint8_t adc_read_count = 0, int_cnt = 0;
 uint16_t second_counter = 0;
 uint8_t sec, min, hour, adc_hold = 0;
@@ -23,6 +86,8 @@ void USART_Transmit( unsigned char data );
 unsigned char USART_Receive( void );
 void USART_Flush( void );
 void USART_text(unsigned char* text);
+void wait_ms(uint16_t ms);
+void wait_us(uint8_t us);
 
 
 ISR(TIMER0_OVF_vect){
@@ -34,21 +99,21 @@ ISR(TIMER0_OVF_vect){
             } else
                 adc_hold++;
         } else {
-            if ( selected_adc_channel == RED_adc ){
-                selected_adc_channel = GREEN_adc;
-                RED_value -= RED_buffer[adc_read_count];
-                RED_buffer[adc_read_count] = ADC;
-                RED_value += RED_buffer[adc_read_count];
-            } else if ( selected_adc_channel == GREEN_adc ){
-                selected_adc_channel = BLUE_adc;
-                GREEN_value -= GREEN_buffer[adc_read_count];
-                GREEN_buffer[adc_read_count] = ADC;
-                GREEN_value += GREEN_buffer[adc_read_count];
+            if ( selected_adc_channel == metal_sense_adc ){
+                selected_adc_channel = glass_sense_adc;
+                metal_sense_value -= metal_sense_buffer[adc_read_count];
+                metal_sense_buffer[adc_read_count] = ADC;
+                metal_sense_value += metal_sense_buffer[adc_read_count];
+            } else if ( selected_adc_channel == glass_sense_adc ){
+                selected_adc_channel = color_sense_adc;
+                glass_sense_value -= glass_sense_buffer[adc_read_count];
+                glass_sense_buffer[adc_read_count] = ADC;
+                glass_sense_value += glass_sense_buffer[adc_read_count];
             } else {
-                selected_adc_channel = RED_adc;
-                BLUE_value -= BLUE_buffer[adc_read_count];
-                BLUE_buffer[adc_read_count] = ADC;
-                BLUE_value += BLUE_buffer[adc_read_count];
+                selected_adc_channel = metal_sense_adc;
+                color_sense_value -= color_sense_buffer[adc_read_count];
+                color_sense_buffer[adc_read_count] = ADC;
+                color_sense_value += color_sense_buffer[adc_read_count];
                 adc_read_count++;
                 if ( adc_read_count > 9){
                     adc_read_count = 0;
@@ -99,27 +164,61 @@ ISR(TIMER0_OVF_vect){
 
 ISR(BADISR_vect){}
 
+
+
+
+void lcd_data(uint8_t data){
+    PORTD |= ( 1 << PD3 );
+    lcd_write_nibble(data >> 4);
+    lcd_write_nibble(data);
+}
+
+void lcd_command(uint8_t command){
+    PORTD &= 0xFF & ~( 1 << PD3 );
+    lcd_write_nibble(command >> 4);
+    lcd_write_nibble(command);
+}
+
+void lcd_write_nibble(uint8_t data){
+    PORTC = ( data >> 4 ) & 0x0F;
+
+    PORTD &= 0xFF & ~( 1 << PD6 );
+    PORTD |= ( 1 << PD6 );
+    PORTD &= 0xFF & ~( 1 << PD6 );
+
+    wait_us(200);
+}
+
+void lcd_init(void){
+    for ( uint8_t enable_4b_mode = 0; enable_4b_mode < 3; enable_4b_mode++){
+        lcd_write_nibble(0x03);
+        wait_ms(5);
+    }
+
+    
+}
+
 void USART_Init( unsigned int ubrr){
-    UBRR0H = (unsigned char)(ubrr>>8);
-    UBRR0L = (unsigned char)ubrr;
-    UCSR0A = (1<<U2X0);
-    UCSR0B = (1<<RXEN0)|(1<<TXEN0);
-    UCSR0C = (1<<USBS0)|(3<<UCSZ00);
+    UBRRH = (unsigned char)(ubrr>>8);
+    UBRRL = (unsigned char)ubrr;
+    UCSRA = (1<<U2X);
+    UCSRB = (1<<RXEN)|(1<<TXEN);
+    UCSRC = (1<<USBS)|(3<<UCSZ0);
 }
 
 void USART_Transmit( unsigned char data ){
-    while ( !( UCSR0A & (1<<UDRE0)) );
-    UDR0 = data;
+    while ( !( UCSRA & (1<<UDRE)) );
+    UDR = data;
 }
 
 unsigned char USART_Receive( void ){
-    while ( !(UCSR0A & (1<<RXC0)) );
-    return UDR0;
+    while ( !(UCSRA & (1<<RXC)) );
+    return UDR;
 }
 
 void USART_Flush( void ){
     unsigned char dummy;
-    while ( UCSR0A & (1<<RXC0) ) dummy = UDR0;
+    while ( UCSRA & (1<<RXC) ) dummy = UDR;
 }
 
 void USART_text(unsigned char* text){
@@ -128,19 +227,50 @@ void USART_text(unsigned char* text){
     }
 }
 
+void wait_ms(uint16_t ms){
+    while(ms--)
+        _delay_ms(1);
+}
+
+void wait_us(uint8_t us){
+    while(us--)
+        _delay_us(1);
+}
+
 void setup(void){
-    USART_Init(13);
+    cli();
+    USART_Init(191);        // UART - 9600 Baudrate
+    DDRA = ( 1 << PA7 );
+    DDRB = ( 1 << PB0 ) | ( 1 << PB1 ) | ( 1 << PB2) | ( 1 << PB3 );
+    DDRC = ( 1<< PC0 ) | ( 1  << PC1 ) | ( 1 << PC2 ) | ( 1 << PC3);
+    DDRD = 0xF6;
+
+    PORTA = 0x70;
+    PORTB = 0xF0;
+    PORTC = 0x00;
+    PORTD = 0x00;
+
     DDRB |= ( 1 << PB4 );
     PORTB |= ( 1 << PB4 );
     DDRC = ( 0 << PC2 ) | ( 0 << PC3 ) | ( 0 << PC3 );
 
-    DIDR0 = ( 1 << ADC4D ) | ( 1 << ADC3D ) | ( 1 << ADC2D);
+    ADMUX = ( 1 << REFS0) | (selected_adc_channel & 0x1F);
+    ADCSRA = ( 1 << ADEN ) | ( 1 << ADSC ) | (1 << ADPS2 ) | ( 1 << ADPS1 ) | ( 1 << ADPS0 );   // Adc single shot mode, clk/128
 
-    ADMUX = ( 1 << REFS0) | (selected_adc_channel & 0x0F);
-    ADCSRA = ( 1 << ADEN ) | ( 1 << ADSC ) | ( 1 << ADPS1 ) | ( 1 << ADPS0 );
+    // Software PWM timer (50Hz)
+    // 50 Hz with 8bit resolution => update every 20ms times 256 => update every 0.078125 ms
+    TCCR0 = ( 1 << WGM01 ) | ( 1 << CS01 );                     // Timer0 in CTC mode, clk/8 = 12800Hz
+    OCR0 = 71
 
-    TCCR0B = ( 1 << CS01 );     // Setup Timer0 to overflow mode, interrupt on every 2.048 ms
-    TIMSK0 = ( 1 << TOIE0 );
+    // System timer
+    TCCR2 = ( 1 << WGM21 ) | ( 1 << CS21 ) | ( 1 << CS20);     // Timer2 in CTC mode, clk/64
+    OCR2 = 115                                  // Interrupt every ~0.5ms
+
+    // Enable timers interrupts
+    TIMSK = ( 1 << OCIE0 ) | ( 1 << OCIE2 );
+
+    // Disable analog comparator
+    ACSR = (1 << ACD);
     sei();
 }
 
@@ -154,31 +284,3 @@ int main(void){
         PORTB ^= ( 1 << PB4 );
     }
 }
-
-/*
-typedef struct IO_B {
-	unsigned int LCD_RS:1;				//PB0
-	unsigned int LCD_EN:1;				//PB1
-	unsigned int B2:1;		            //PB2
-	unsigned int B3:1;			        //PB3
-	unsigned int B4:1;		            //PB4
-	unsigned int B5:1;			        //PB5
-	unsigned int B6:1;			        //PB6
-	unsigned int B7:1;			        //PB7
-} IO_B;
-
-#define _PORTB	(*( volatile IO_B*)&PORTB)
-
-typedef struct IO_D {
-	unsigned int D0:1;				//PD0
-	unsigned int D1:1;				//PD1
-	unsigned int LCD_D4:1;		    //PD2
-	unsigned int LCD_D5:1;			//PD3
-	unsigned int LCD_D6:1;		    //PD4
-	unsigned int LCD_D7:1;			//PD5
-	unsigned int D6:1;			    //PD6
-	unsigned int D7:1;			    //PD7
-} IO_D;
-
-#define _PORTD	(*( volatile IO_D*)&PORTD)
-*/
