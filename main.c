@@ -1,11 +1,9 @@
 #define __AVR_ATmega16__
+//#define F_CPU 14745600UL
 #include <avr/io.h>
 #include <avr/interrupt.h>
-#define F_CPU 14745600UL
 #include <util/delay.h>
 #include <avr/cpufunc.h>
-#include <string.h>
-#include <stdio.h>
 
 // sense stages ADC channels PORTA
 #define metal_sense_adc 0
@@ -75,12 +73,17 @@
 2 - feed sense          (PA3)
 */
 
+/*
+Buzzer                  (PD2)
+*/
+
 char selected_adc_channel = metal_sense_adc;
 
 uint16_t metal_sense_buffer[10] = { 0 }, glass_sense_buffer[10] = { 0 }, color_sense_buffer[10] = { 0 }, metal_sense_value = 0, glass_sense_value = 0, color_sense_value = 0;
 uint8_t adc_read_count = 0, int_cnt = 0;
 uint16_t second_counter = 0;
 uint8_t sec, min, hour, adc_hold = 0;
+uint8_t lcdColumns, lcdRows, currentCol, currentRow, lcdRowStart[4];
 
 void USART_Transmit( unsigned char data );
 unsigned char USART_Receive( void );
@@ -88,9 +91,16 @@ void USART_Flush( void );
 void USART_text(unsigned char* text);
 void wait_ms(uint16_t ms);
 void wait_us(uint8_t us);
+void lcd_text(unsigned char* text);
+void lcd_data(uint8_t data);
+void lcd_command(uint8_t command);
+void lcd_write_nibble(uint8_t data);
+void lcd_move_cursor(uint8_t row, uint8_t col);
+void lcd_init(void);
 
 
-ISR(TIMER0_OVF_vect){
+ISR(TIMER2_COMP_vect){
+    PORTB ^= ( 1 << PB2 );
     if ( ADCSRA & ( 1 << ADIF ) ) {         // ADC conversion complete flag
         if ( adc_hold ) {
             if ( adc_hold > 3 ) {       // wait with starting new conversion for ca. 6 ms after changing mux
@@ -125,13 +135,14 @@ ISR(TIMER0_OVF_vect){
     }
     if ( int_cnt > 200 ){
         int_cnt = 0;
-        unsigned char message[15];
+        USART_text("Interrupt! (200 * 0.5ms)\n\r");
+        //unsigned char message[15];
 
-        USART_text("\e[2J");
-        USART_text("\e[H");
+        //USART_text("\e[2J");
+        //USART_text("\e[H");
 
-        sprintf(message, "R = 0x%x\n\r", RED_value / 10);
-        USART_text(message);        
+        //sprintf(message, "R = 0x%x\n\r", metal_sense_value / 10);
+        //USART_text(message);        
 
         // sprintf(message, "G = 0x%x\n\r", GREEN_value / 10);
         // USART_text(message);
@@ -162,10 +173,33 @@ ISR(TIMER0_OVF_vect){
     second_counter++;
 }
 
+uint8_t pwm_comp = 0xFF;
+
+ISR(TIMER0_COMP_vect){
+    PORTB ^= ( 1 << PB0 );
+    if ( ++pwm_comp == 0)
+        PORTB ^= ( 1 << PB1 );
+}
+
 ISR(BADISR_vect){}
 
 
 
+void lcd_text(unsigned char* text){
+    while(*text){
+        lcd_data((unsigned char) *text++);
+        wait_us(50);
+        currentCol++;
+        if ( currentCol > lcdColumns ){
+            currentCol = 0;
+            currentRow++;
+            if ( currentRow > lcdRows ){
+                currentRow = 0;
+            }
+            lcd_move_cursor(currentCol, currentRow);
+        }
+    }
+}
 
 void lcd_data(uint8_t data){
     PORTD |= ( 1 << PD3 );
@@ -174,19 +208,37 @@ void lcd_data(uint8_t data){
 }
 
 void lcd_command(uint8_t command){
-    PORTD &= 0xFF & ~( 1 << PD3 );
+    PORTD &= ~( 1 << PD3 );
     lcd_write_nibble(command >> 4);
     lcd_write_nibble(command);
 }
 
 void lcd_write_nibble(uint8_t data){
-    PORTC = ( data >> 4 ) & 0x0F;
+    PORTC &= 0xF0;
+    PORTC |= (data & 0x0F);
+    wait_us(250);
 
-    PORTD &= 0xFF & ~( 1 << PD6 );
+    PORTD &= ~( 1 << PD6 );
     PORTD |= ( 1 << PD6 );
-    PORTD &= 0xFF & ~( 1 << PD6 );
+    PORTD &= ~( 1 << PD6 );
 
-    wait_us(200);
+    wait_ms(2);
+}
+
+void lcd_move_cursor(uint8_t row, uint8_t col){
+    lcd_command(0b10000000 | ( lcdRowStart[row] + col ));
+    currentCol = col;
+    currentRow = row;
+}
+
+void lcd_clear(void){
+    lcd_command(0x01);
+}
+
+void lcd_home(void){
+    currentCol = 0;
+    currentRow = 0;
+    lcd_command(0x02);
 }
 
 void lcd_init(void){
@@ -194,14 +246,28 @@ void lcd_init(void){
         lcd_write_nibble(0x03);
         wait_ms(5);
     }
-
+    lcd_write_nibble(0x02);
+    wait_ms(1);
     
+    lcd_command(0x28);
+    
+    lcd_clear();
+    lcd_command(0x0C);
+    lcd_command(0x06);
+    
+    lcdColumns = 20;
+    lcdRows = 4;
+    lcdRowStart[0] = 0x00;
+    lcdRowStart[1] = 0x40;
+    lcdRowStart[2] = lcdColumns;
+    lcdRowStart[3] = 0x50 + lcdRows;
+    
+    lcd_home();
 }
 
 void USART_Init( unsigned int ubrr){
     UBRRH = (unsigned char)(ubrr>>8);
     UBRRL = (unsigned char)ubrr;
-    UCSRA = (1<<U2X);
     UCSRB = (1<<RXEN)|(1<<TXEN);
     UCSRC = (1<<USBS)|(3<<UCSZ0);
 }
@@ -239,20 +305,19 @@ void wait_us(uint8_t us){
 
 void setup(void){
     cli();
-    USART_Init(191);        // UART - 9600 Baudrate
+    USART_Init(96);        // UART - 9600 Baudrate
     DDRA = ( 1 << PA7 );
     DDRB = ( 1 << PB0 ) | ( 1 << PB1 ) | ( 1 << PB2) | ( 1 << PB3 );
-    DDRC = ( 1<< PC0 ) | ( 1  << PC1 ) | ( 1 << PC2 ) | ( 1 << PC3);
-    DDRD = 0xF6;
+    DDRC = 0x0F;
+    DDRD = 0xFC;
 
     PORTA = 0x70;
     PORTB = 0xF0;
     PORTC = 0x00;
-    PORTD = 0x00;
+    PORTD = 0x04;
 
     DDRB |= ( 1 << PB4 );
     PORTB |= ( 1 << PB4 );
-    DDRC = ( 0 << PC2 ) | ( 0 << PC3 ) | ( 0 << PC3 );
 
     ADMUX = ( 1 << REFS0) | (selected_adc_channel & 0x1F);
     ADCSRA = ( 1 << ADEN ) | ( 1 << ADSC ) | (1 << ADPS2 ) | ( 1 << ADPS1 ) | ( 1 << ADPS0 );   // Adc single shot mode, clk/128
@@ -260,27 +325,35 @@ void setup(void){
     // Software PWM timer (50Hz)
     // 50 Hz with 8bit resolution => update every 20ms times 256 => update every 0.078125 ms
     TCCR0 = ( 1 << WGM01 ) | ( 1 << CS01 );                     // Timer0 in CTC mode, clk/8 = 12800Hz
-    OCR0 = 71
+    OCR0 = 71;
 
     // System timer
     TCCR2 = ( 1 << WGM21 ) | ( 1 << CS21 ) | ( 1 << CS20);     // Timer2 in CTC mode, clk/64
-    OCR2 = 115                                  // Interrupt every ~0.5ms
+    OCR2 = 115;                                  // Interrupt every ~0.5ms
 
     // Enable timers interrupts
     TIMSK = ( 1 << OCIE0 ) | ( 1 << OCIE2 );
 
     // Disable analog comparator
     ACSR = (1 << ACD);
+
+    lcd_init();
+    lcd_text("TEST");
+    lcd_move_cursor(1,0);
+    lcd_text("dupa 1");
+    lcd_move_cursor(2,1);
+    lcd_text("dupa 2");
+    lcd_move_cursor(3,2);
+    lcd_text("dupa 3");
     sei();
 }
 
 int main(void){
     setup();
-    // start first ADC conversion
 
     for(;;){
-        _delay_ms(500);
-        //USART_text("2137\n");
-        PORTB ^= ( 1 << PB4 );
+        wait_ms(100);
+        PORTA ^= ( 1 << PA7 );
+        USART_text((unsigned char)"test UART\n\r");
     }
 }

@@ -1,8 +1,9 @@
 BIN=main
 OBJS=main.o
 
-DEVICE=atmega48
-SPEED=1000000UL
+DEVICE=atmega16a
+SPEED=14745600UL
+#SPEED=8000000UL
 
 OBJCOPY=avr-objcopy
 AVRSIZE=avr-size
@@ -34,3 +35,5 @@ install: ${BIN}.hex
 
 clean:
 	${DEL} ${BIN}.elf ${BIN}.hex ${OBJS}
+
+# avrdude -c USBasp -p atmega16a	-U lfuse:w:0xFE:m	-U hfuse:w:0x89:m
