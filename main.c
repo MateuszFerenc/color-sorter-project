@@ -1,5 +1,5 @@
 #define __AVR_ATmega16__
-//#define F_CPU 14745600UL
+#define F_CPU 14745600UL
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #include <util/delay.h>
@@ -80,8 +80,8 @@ Buzzer                  (PD2)
 char selected_adc_channel = metal_sense_adc;
 
 uint16_t metal_sense_buffer[10] = { 0 }, glass_sense_buffer[10] = { 0 }, color_sense_buffer[10] = { 0 }, metal_sense_value = 0, glass_sense_value = 0, color_sense_value = 0;
-uint8_t adc_read_count = 0, int_cnt = 0;
-uint16_t second_counter = 0;
+uint8_t adc_read_count = 0;
+uint16_t system_counter = 0;
 uint8_t sec, min, hour, adc_hold = 0;
 uint8_t lcdColumns, lcdRows, currentCol, currentRow, lcdRowStart[4];
 
@@ -133,9 +133,8 @@ ISR(TIMER2_COMP_vect){
             adc_hold = 1;       // hold conversion for stable readings
         }
     }
-    if ( int_cnt > 200 ){
-        int_cnt = 0;
-        USART_text("Interrupt! (200 * 0.5ms)\n\r");
+    if ( system_counter > 200 ){
+        USART_text("Interrupt! (200 * 0.625ms = 125ms)\n\r");
         //unsigned char message[15];
 
         //USART_text("\e[2J");
@@ -155,30 +154,61 @@ ISR(TIMER2_COMP_vect){
         // sprintf(time, "\nRuntime: %d:%d:%d", hour, min, sec);
         // USART_text(time);
     }
-    if ( second_counter == 488 ){
-        second_counter = 0;
+    // correction available
+    // 2^16 = 65536 when 2^16 / 1600 = 40.96, which means that every counter reload lacks 64 ticks
+    // so when we correct modulo after missing cycle, we can achieve stable clock
+    // like one run -> mod 1600 => reload counter (missing 64 cycles) -> first mod 64 then back to mod 1600, and repeat
+    if ( system_counter % 1600 == 0 ){
         sec++;
-        if ( sec > 59 ) {
-            sec = 0;
-            min++;
-            if ( min > 59 ) {
-                min = 0;
-                hour++;
-                if ( hour > 23 )
-                    hour = 0;
+        if ( ( sec & 0x0F ) > 9 ){
+            sec += 0x10;
+            sec &= 0xF0;
+            if ( ( sec >> 4 ) > 5 ){
+                sec = 0;
+                min++;
+                if ( ( min & 0x0F ) > 9 ){
+                    min += 0x10;
+                    min &= 0xF0;
+                    if ( ( min >> 4 ) > 5 ){
+                        min = 0;
+                        hour++;
+                        if ( ( hour & 0x0F ) > 9 ){
+                            hour += 0x10;
+                            hour &= 0xF0;
+                            if ( ( ( hour >> 4 ) == 2 ) && ( ( hour & 0x0F ) > 4 ) ){
+                                hour = 0;
+                            }
+                        }
+                    }
+                }
             }
         }
     }
-    int_cnt++;
-    second_counter++;
+    system_counter++;
 }
-
-uint8_t pwm_comp = 0xFF;
-
+uint8_t key_col_state[4] = { 0 };
 ISR(TIMER0_COMP_vect){
-    PORTB ^= ( 1 << PB0 );
-    if ( ++pwm_comp == 0)
-        PORTB ^= ( 1 << PB1 );
+    static uint8_t pwm_counter = 0xFF;
+    //static uint8_t key_col_state[4] = { 0 };
+
+    if ( ++pwm_counter == 0 ){
+        PORTB ^= ( 1 << PB0 );
+    }
+
+    if ( pwm_counter % 12 == 0 ){       // scan next row every 1.25ms
+        register uint8_t temp = ~( PORTC & 0xF0 );
+        if ( temp != 0x80 )
+            temp <<= 1;
+        else
+            temp = 0x10;
+        PORTC &= 0x0F;
+        PORTC |= ~temp & 0xF0;
+        key_col_state[((temp & 0x80) || (temp & 0x40) << 1)|((temp & 0x80) || (temp & 0x20))] = PORTC >> 4;
+    }
+
+    //PORTB ^= ( 1 << PB0 );
+    //if ( ++pwm_comp == 0)
+    //    PORTB ^= ( 1 << PB1 );
 }
 
 ISR(BADISR_vect){}
@@ -305,7 +335,7 @@ void wait_us(uint8_t us){
 
 void setup(void){
     cli();
-    USART_Init(96);        // UART - 9600 Baudrate
+    //USART_Init(96);        // UART - 9600 Baudrate
     DDRA = ( 1 << PA7 );
     DDRB = ( 1 << PB0 ) | ( 1 << PB1 ) | ( 1 << PB2) | ( 1 << PB3 );
     DDRC = 0x0F;
@@ -313,7 +343,7 @@ void setup(void){
 
     PORTA = 0x70;
     PORTB = 0xF0;
-    PORTC = 0x00;
+    PORTC = 0xE0;
     PORTD = 0x04;
 
     DDRB |= ( 1 << PB4 );
@@ -328,8 +358,8 @@ void setup(void){
     OCR0 = 71;
 
     // System timer
-    TCCR2 = ( 1 << WGM21 ) | ( 1 << CS21 ) | ( 1 << CS20);     // Timer2 in CTC mode, clk/64
-    OCR2 = 115;                                  // Interrupt every ~0.5ms
+    TCCR2 = ( 1 << WGM21 ) | ( 1 << CS21 ) | ( 1 << CS20);     // Timer2 in CTC mode, clk/32
+    OCR2 = 143;                                  // Interrupt every 625us
 
     // Enable timers interrupts
     TIMSK = ( 1 << OCIE0 ) | ( 1 << OCIE2 );
@@ -354,6 +384,23 @@ int main(void){
     for(;;){
         wait_ms(100);
         PORTA ^= ( 1 << PA7 );
-        USART_text((unsigned char)"test UART\n\r");
+        lcd_move_cursor(3,10);
+        //unsigned char time[8] = {hour >> 4, hour & 0x0F, ":", min >> 4, min & 0x0F, ":", sec >> 4, sec & 0x0F};
+        //lcd_text(time);
+        lcd_data((hour >> 4) + 0x30);
+        lcd_data((hour & 0x0F) + 0x30);
+        lcd_data(0x3A);
+        lcd_data((min >> 4) + 0x30);
+        lcd_data((min & 0x0F) + 0x30);
+        lcd_data(0x3A);
+        lcd_data((sec >> 4) + 0x30);
+        lcd_data((sec & 0x0F) + 0x30);
+
+        lcd_move_cursor(0, 10);
+        lcd_data(key_col_state[0] + 0x30);
+        lcd_data(key_col_state[1] + 0x30);
+        lcd_data(key_col_state[2] + 0x30);
+        lcd_data(key_col_state[3] + 0x30);
+        //USART_text((unsigned char)"test UART\n\r");
     }
 }
