@@ -186,24 +186,24 @@ ISR(TIMER2_COMP_vect){
     }
     system_counter++;
 }
+
 uint8_t key_col_state[4] = { 0 };
+
 ISR(TIMER0_COMP_vect){
     static uint8_t pwm_counter = 0xFF;
+    static uint8_t key_scan_row = 0;
     //static uint8_t key_col_state[4] = { 0 };
 
     if ( ++pwm_counter == 0 ){
         PORTB ^= ( 1 << PB0 );
     }
 
-    if ( pwm_counter % 12 == 0 ){       // scan next row every 1.25ms
-        register uint8_t temp = ~( PORTC & 0xF0 );
-        if ( temp != 0x80 )
-            temp <<= 1;
-        else
-            temp = 0x10;
-        PORTC &= 0x0F;
-        PORTC |= ~temp & 0xF0;
-        key_col_state[((temp & 0x80) || (temp & 0x40) << 1)|((temp & 0x80) || (temp & 0x20))] = PORTC >> 4;
+    if ( pwm_counter % 51 == 0 && pwm_counter != 0){       // scan next row every 1.25ms
+        key_col_state[key_scan_row] = ~(PINB >> 4) & 0x0F;
+        PORTC |= 0xF0;
+        PORTC ^= (1 << (4 + key_scan_row++));
+        if ( key_scan_row > 3 )
+            key_scan_row = 0;
     }
 
     //PORTB ^= ( 1 << PB0 );
@@ -338,16 +338,13 @@ void setup(void){
     //USART_Init(96);        // UART - 9600 Baudrate
     DDRA = ( 1 << PA7 );
     DDRB = ( 1 << PB0 ) | ( 1 << PB1 ) | ( 1 << PB2) | ( 1 << PB3 );
-    DDRC = 0x0F;
+    DDRC = 0xFF;
     DDRD = 0xFC;
 
     PORTA = 0x70;
     PORTB = 0xF0;
-    PORTC = 0xE0;
+    PORTC = 0xF0;
     PORTD = 0x04;
-
-    DDRB |= ( 1 << PB4 );
-    PORTB |= ( 1 << PB4 );
 
     ADMUX = ( 1 << REFS0) | (selected_adc_channel & 0x1F);
     ADCSRA = ( 1 << ADEN ) | ( 1 << ADSC ) | (1 << ADPS2 ) | ( 1 << ADPS1 ) | ( 1 << ADPS0 );   // Adc single shot mode, clk/128
@@ -380,13 +377,12 @@ void setup(void){
 
 int main(void){
     setup();
-
+    uint8_t hex[16] = "0123456789ABCDEF";
     for(;;){
         wait_ms(100);
         PORTA ^= ( 1 << PA7 );
-        lcd_move_cursor(3,10);
-        //unsigned char time[8] = {hour >> 4, hour & 0x0F, ":", min >> 4, min & 0x0F, ":", sec >> 4, sec & 0x0F};
-        //lcd_text(time);
+
+        lcd_move_cursor(3, 10);
         lcd_data((hour >> 4) + 0x30);
         lcd_data((hour & 0x0F) + 0x30);
         lcd_data(0x3A);
@@ -394,13 +390,16 @@ int main(void){
         lcd_data((min & 0x0F) + 0x30);
         lcd_data(0x3A);
         lcd_data((sec >> 4) + 0x30);
+        lcd_move_cursor(3, 17);
+        lcd_text(" ");
+        lcd_move_cursor(3, 17);
         lcd_data((sec & 0x0F) + 0x30);
 
         lcd_move_cursor(0, 10);
-        lcd_data(key_col_state[0] + 0x30);
-        lcd_data(key_col_state[1] + 0x30);
-        lcd_data(key_col_state[2] + 0x30);
-        lcd_data(key_col_state[3] + 0x30);
+        lcd_data(hex[key_col_state[0]]);
+        lcd_data(hex[key_col_state[1]]);
+        lcd_data(hex[key_col_state[2]]);
+        lcd_data(hex[key_col_state[3]]);
         //USART_text((unsigned char)"test UART\n\r");
     }
 }

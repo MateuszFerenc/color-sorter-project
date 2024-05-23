@@ -1,7 +1,7 @@
 BIN=main
 OBJS=main.o
 
-DEVICE=atmega16a
+DEVICE=atmega16
 SPEED=14745600UL
 #SPEED=8000000UL
 
