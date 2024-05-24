@@ -5,6 +5,7 @@
 #include <util/delay.h>
 #include <avr/cpufunc.h>
 #include <avr/pgmspace.h>
+#include <stdio.h>
 
 #define PIN_clear(port, pin)                port &= ~( 1 << pin )
 #define PIN_set(port, pin)                  port |= ( 1 << pin )
@@ -91,6 +92,10 @@ uint8_t sec = 0, min = 0, hour = 0;
 uint8_t adc_hold = 0, adc_read_count = 0;
 uint8_t lcdColumns, lcdRows, currentCol, currentRow, lcdRowStart[4];
 
+uint8_t compare_PWM0, compare_PWM1, compare_PWM2;
+volatile uint8_t compbuff_PWM0, compbuff_PWM1, compbuff_PWM2;
+uint8_t actual_num_key = '-', last_num_key = '-', actual_func_key = '-', last_func_key = '-';
+
 void USART_Transmit( unsigned char data );
 unsigned char USART_Receive( void );
 void USART_Flush( void );
@@ -103,10 +108,14 @@ void lcd_command(uint8_t command);
 void lcd_write_nibble(uint8_t data);
 void lcd_move_cursor(uint8_t row, uint8_t col);
 void lcd_init(void);
+uint16_t pow_(uint8_t value, uint8_t base);
+
+uint8_t val_pwm0 = 0;
 
 // System interrupt (every 0.625us)
 ISR(TIMER2_COMP_vect){
     static uint8_t selected_adc_channel = metal_sense_adc;
+    static uint8_t selected_digit = 0;
     if ( ADCSRA & ( 1 << ADIF ) ) {         // ADC conversion complete flag
         if ( adc_hold ) {
             if ( adc_hold > 3 ) {       // wait with starting new conversion for ca. 6 ms after changing mux
@@ -142,6 +151,29 @@ ISR(TIMER2_COMP_vect){
     if ( system_counter % 256 == 0 && system_counter != 0 ){
         USART_text("Interrupt! (256 * 0.625ms = 160ms)\n\r");
     }
+
+    if (system_counter % 32 == 0 && system_counter != 0){
+        if ( actual_func_key == 'D' && last_func_key == 'D' ){
+            selected_digit = 1;
+        }
+
+        if ( selected_digit > 0 ){
+            if ( actual_num_key != last_num_key && actual_num_key != '-' ){
+                val_pwm0 = val_pwm0 * 10 + ( actual_num_key - '0' );
+                selected_digit++;
+            }
+            if ( selected_digit > 4 ){
+                val_pwm0 = 0;
+                selected_digit = 1;
+            }
+        }
+
+        if ( actual_func_key == 'A' && last_func_key == 'A' && selected_digit > 0 ){
+            compbuff_PWM0 = val_pwm0;
+            val_pwm0 = 0;
+            selected_digit = 0;
+        }
+    }
     // correction available
     // 2^16 = 65536 when 2^16 / 1600 = 40.96, which means that every counter reload lacks 64 ticks
     // so when we correct modulo after missing cycle, we can achieve stable clock
@@ -174,10 +206,6 @@ ISR(TIMER2_COMP_vect){
     }
     system_counter++;
 }
-
-uint8_t compare_PWM0, compare_PWM1, compare_PWM2;
-volatile uint8_t compbuff_PWM0, compbuff_PWM1, compbuff_PWM2;
-uint8_t actual_num_key = '-', last_num_key = '-', actual_func_key = '-', last_func_key = '-';
 
 #define PWM0_pin        PB3
 #define PWM0_port       PORTB
@@ -368,6 +396,14 @@ void wait_us(uint8_t us){
         _delay_us(1);
 }
 
+uint16_t pow_(uint8_t value, uint8_t base){
+    uint16_t temp = 1;
+    for(uint8_t i = 0; i < base; i++){
+        temp *= value;
+    }
+    return temp;
+}
+
 void setup(void){
     cli();
     //USART_Init(96);        // UART - 9600 Baudrate
@@ -399,8 +435,8 @@ void setup(void){
     // Disable analog comparator
     ACSR = (1 << ACD);
 
-    compare_PWM0 = 0x80;
-    compbuff_PWM0 = 0x80;
+    compare_PWM0 = 0x00;
+    compbuff_PWM0 = 0x00;
     compare_PWM1 = 0x30;
     compbuff_PWM1 = 0x30;
     compare_PWM2 = 0xAA;
@@ -415,6 +451,7 @@ void setup(void){
 int main(void){
     setup();
     unsigned char hex[16] = "0123456789ABCDEF";
+    
     for(;;){
         wait_ms(100);
 
@@ -435,43 +472,14 @@ int main(void){
         lcd_data(actual_num_key);
         lcd_data(actual_func_key);
 
-        switch (actual_num_key){
-            case '0':
-                compbuff_PWM0 = 0;
-            break;
-            case '1':
-                compbuff_PWM0 = 3;
-            break;
-            case '2':
-                compbuff_PWM0 = 9;
-            break;
-            case '3':
-                compbuff_PWM0 = 12;
-            break;
-            case '4':
-                compbuff_PWM0 = 15;
-            break;
-            case '5':
-                compbuff_PWM0 = 18;
-            break;
-            case '6':
-                compbuff_PWM0 = 21;
-            break;
-            case '7':
-                compbuff_PWM0 = 24;
-            break;
-            case '8':
-                compbuff_PWM0 = 27;
-            break;
-            case '9':
-                compbuff_PWM0 = 30;
-            break;
-        }
-        /*lcd_move_cursor(0, 10);
-        lcd_data(hex[key_col_state[0]]);
-        lcd_data(hex[key_col_state[1]]);
-        lcd_data(hex[key_col_state[2]]);
-        lcd_data(hex[key_col_state[3]]);*/
-        //USART_text((unsigned char)"test UART\n\r");
+        
+
+        unsigned char val[10];
+        sprintf(val, "val: %3d", val_pwm0);
+        lcd_move_cursor(1, 10);
+        lcd_text(val);
+        sprintf(val, "PWM0: %3d", compbuff_PWM0);
+        lcd_move_cursor(2, 10);
+        lcd_text(val);
     }
 }
