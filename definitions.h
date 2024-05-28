@@ -97,6 +97,7 @@ Buzzer                  (PD2)
 #define     DISP_STATE_CLEAR            5
 #define     DISP_STATE_HOME             6
 #define     DISP_STATE_ENWAIT           7
+#define     DISP_STATE_MCURSOR          8
 
 
 void USART_Transmit( unsigned char data );

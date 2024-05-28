@@ -10,7 +10,7 @@ AVRSIZE=avr-size
 AVROBJDUMP=avr-objdump
 
 CC=avr-gcc
-CFLAGS=-Os -DF_CPU=${SPEED} -mmcu=${DEVICE} -Wall
+CFLAGS=-Os -DF_CPU=${SPEED} -mmcu=${DEVICE} #-Wall
 
 PROGRAMMER=USBasp
 AVRDUDE=avrdude

@@ -10,18 +10,11 @@ uint8_t compare_PWM0, compare_PWM1, compare_PWM2;
 volatile uint8_t compbuff_PWM0, compbuff_PWM1, compbuff_PWM2;
 uint8_t actual_num_key = '-', last_num_key = '-', actual_func_key = '-', last_func_key = '-';
 
-unsigned char disp_0lane_0buff[20] = "";
-unsigned char disp_1lane_0buff[20] = "";
-unsigned char disp_2lane_0buff[20] = "";
-unsigned char disp_3lane_0buff[20] = "";
-
-unsigned char disp_0lane_1buff[20] = "";
-unsigned char disp_1lane_1buff[20] = "";
-unsigned char disp_2lane_1buff[20] = "";
-unsigned char disp_3lane_1buff[20] = "";
+unsigned char disp_linear_buff[160] = "";
 
 // one properties mem. cell, but I think two will be better, i.e. now need of writing without making buffer dirty
-uint8_t disp_buffers_properties = 0;        // buffer "dirty" bits, one means buffer updated and ready to display [ bits: 7-4 => dispX_1buff, 3-0 => dispX_0buff ]
+uint8_t disp_buffers_dirty = 0;        // buffer "dirty" bits, one means buffer updated and ready to display
+// bits: 7-4: disp_linear_buff[79:159] = 7 - 4th line .. 4 - 1st line, 3-0: disp_linear_buff[0:79] = 3 - 4th line .. 0 - 1st line
 
 uint8_t disp_state = DISP_STATE_NOP, disp_last_state = DISP_STATE_NOP;
 
@@ -131,7 +124,8 @@ const unsigned char keypad_num2_keys[] PROGMEM = "-78-9";
 const unsigned char keypad_num3_keys[] PROGMEM = "-*0-#";
 const unsigned char keypad_func_keys[] PROGMEM = "-ABCD";
 
-uint8_t disp_delay = 0, disp_temp_data = 0;
+uint8_t disp_delay = 0, disp_temp_data = 0, disp_column_counter = 0, disp_operation = DISP_STATE_NOP;
+uint16_t *disp_buffer_pointer = NULL;
 
 // SoftPWM and Keypad scan interrupt (every 150us)
 ISR(TIMER0_COMP_vect){
@@ -179,7 +173,38 @@ ISR(TIMER0_COMP_vect){
         }
     }
 
-    //if ( disp_state == DISP_STATE_NOP ){}
+    if ( disp_state == DISP_STATE_NOP ){
+        if ( disp_buffers_dirty && disp_operation == DISP_STATE_NOP ){
+            if ( disp_column_counter == 0 ){
+                for (uint8_t buff_idx = 0; buff_idx < 8; buff_idx++ ){
+                    if ( ( disp_buffers_dirty >> buff_idx ) & 1 ){
+                        disp_buffer_pointer = &disp_linear_buff + ( buff_idx - 1 ) * 20;
+                        disp_column_counter = 20;
+                        disp_buffers_dirty &= ~( 1 << buff_idx );
+                        disp_state = DISP_STATE_MCURSOR;
+                        currentCol = 0;
+                        currentRow = buff_idx % 4;
+                        disp_temp_data = 0x80 | lcdRowStart[currentRow];
+                        break;
+                    }
+                }
+            } else {
+                if ( disp_column_counter > 1 ){
+                    PIN_set(PORTD, PD3);
+                    disp_state = DISP_STATE_PUTHDATA;
+                    disp_temp_data = disp_buffer_pointer++;
+                    disp_column_counter--;
+                } else  disp_column_counter = 0;
+            }
+        } else
+            disp_state = disp_operation;
+    }
+
+    if ( disp_state == DISP_STATE_MCURSOR ){
+        disp_state = DISP_STATE_PUTHDATA;
+        PIN_clear(PORTD, PD3);
+        disp_temp_data = 0x80 | ( lcdRowStart[currentRow] + currentCol);      // lcd home command
+    }
 
     if ( disp_state == DISP_STATE_HOME ){
         disp_state = DISP_STATE_PUTHDATA;
@@ -214,9 +239,11 @@ ISR(TIMER0_COMP_vect){
     if ( disp_state == DISP_STATE_ENWAIT ){
         if ( --disp_delay == 0 ){
             if ( disp_last_state == DISP_STATE_PUTHDATA )
-                disp_state = DISP_STATE_PUTLDATA
-            else
+                disp_state = DISP_STATE_PUTLDATA;
+            else {
                 disp_state = DISP_STATE_NOP;
+                disp_operation = DISP_STATE_NOP;
+            }
         }
     }
 
@@ -232,6 +259,20 @@ ISR(TIMER0_COMP_vect){
 }
 
 ISR(BADISR_vect){}
+
+void put_line_to_lcd_buffer(unsigned char* text, uint8_t buffer, uint8_t row){
+    if ( row > lcdRows )
+        row = 0;
+    if ( buffer > 1 )
+        buffer = 0;
+    buffer *= 80;
+    row *= 20;
+    for ( uint8_t column = 0; column < 20; column++){
+        *(disp_linear_buff + buffer + row) = *(text + column);
+    }
+    disp_buffers_dirty = 1 << ((buffer * 4) + row);
+}
+// add method for adding only text fragments, not whole lines
 
 // all display methods in FSM in interrupt forbids use of "async" use (i.e. data waiting in interrupt, but data changed in main thread => conflict and data loss)
 // will be done in interrupt
@@ -284,19 +325,6 @@ void lcd_move_cursor(uint8_t row, uint8_t col){
     currentRow = row;
 }
 
-// will be done in interrupt
-void lcd_clear(void){
-    lcd_command(0x01);
-    wait_ms(1);
-}
-
-// will be done in interrupt
-void lcd_home(void){
-    currentCol = 0;
-    currentRow = 0;
-    lcd_command(0x02);
-    wait_ms(1);
-}
 
 // only initialization will be async, but display FSM should be forced NOP when this method is being executed
 void lcd_init(void){
@@ -309,7 +337,9 @@ void lcd_init(void){
     
     lcd_command(0x28);
     
-    lcd_clear();
+    llcd_command(0x01);     // lcd clear
+    wait_ms(1);
+
     lcd_command(0x0C);
     lcd_command(0x06);
     
@@ -320,7 +350,8 @@ void lcd_init(void){
     lcdRowStart[2] = lcdColumns;
     lcdRowStart[3] = 0x50 + lcdRows;
     
-    lcd_home();
+    lcd_command(0x02);      // lcd home
+    wait_ms(1);
 }
 
 void USART_Init( unsigned int ubrr){
