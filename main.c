@@ -1,24 +1,5 @@
 #include "definitions.h"
 
-uint16_t metal_sense_buffer[10] = { 0 }, glass_sense_buffer[10] = { 0 }, color_sense_buffer[10] = { 0 }, metal_sense_value = 0, glass_sense_value = 0, color_sense_value = 0;
-uint16_t system_counter = 0, sec_counter = 0;
-uint8_t sec = 0, min = 0, hour = 0;
-uint8_t adc_hold = 0, adc_read_count = 0;
-uint8_t lcdColumns, lcdRows, currentCol, currentRow, lcdRowStart[4];
-
-uint8_t compare_PWM0, compare_PWM1, compare_PWM2;
-volatile uint8_t compbuff_PWM0, compbuff_PWM1, compbuff_PWM2;
-uint8_t actual_num_key = '-', last_num_key = '-', actual_func_key = '-', last_func_key = '-';
-
-unsigned char disp_linear_buff[160] = "";
-
-// one properties mem. cell, but I think two will be better, i.e. now need of writing without making buffer dirty
-uint8_t disp_buffers_dirty = 0;        // buffer "dirty" bits, one means buffer updated and ready to display
-// bits: 7-4: disp_linear_buff[79:159] = 7 - 4th line .. 4 - 1st line, 3-0: disp_linear_buff[0:79] = 3 - 4th line .. 0 - 1st line
-
-uint8_t disp_state = DISP_STATE_NOP, disp_last_state = DISP_STATE_NOP;
-
-uint8_t val_pwm0 = 0;
 
 // System interrupt (every 0.625us)
 ISR(TIMER2_COMP_vect){
@@ -118,15 +99,6 @@ ISR(TIMER2_COMP_vect){
 }
 
 
-const unsigned char keypad_num0_keys[] PROGMEM = "-12-3";
-const unsigned char keypad_num1_keys[] PROGMEM = "-45-6";
-const unsigned char keypad_num2_keys[] PROGMEM = "-78-9";
-const unsigned char keypad_num3_keys[] PROGMEM = "-*0-#";
-const unsigned char keypad_func_keys[] PROGMEM = "-ABCD";
-
-uint8_t disp_delay = 0, disp_temp_data = 0, disp_column_counter = 0, disp_operation = DISP_STATE_NOP;
-uint16_t *disp_buffer_pointer = NULL;
-
 // SoftPWM and Keypad scan interrupt (every 150us)
 ISR(TIMER0_COMP_vect){
     static uint8_t pwm_counter = 0xFF;
@@ -159,7 +131,6 @@ ISR(TIMER0_COMP_vect){
             last_func_key = actual_func_key;
             last_num_key = actual_num_key;
             actual_func_key = pgm_read_byte(&keypad_func_keys[ ( key_col_state[1] >> 3 ) | ( key_col_state[2] >> 3 ) * 2 | ( key_col_state[3] >> 3 ) * 3 | ( key_col_state[0] >> 3 ) * 4 ]);
-            //actual_num_key = pgm_read_byte(&keypad_num_keys[ ( key_col_state[1] & 7 ) | ( key_col_state[2] & 7 ) * 2 | ( key_col_state[3] & 7 ) * 3 | ( key_col_state[0] & 7 ) * 4 ]);
             if ( (key_col_state[1] & 7) && last_num_key == '-' )
                 actual_num_key = pgm_read_byte(&keypad_num0_keys[key_col_state[1] & 7 ]);
             if ( (key_col_state[2] & 7) && last_num_key == '-' )
@@ -173,12 +144,23 @@ ISR(TIMER0_COMP_vect){
         }
     }
 
+    if ( disp_state == DISP_STATE_NOP )
+        PIN_clear(PORTB, PB1);
+    else
+        PIN_set(PORTB, PB1);
+
+    if ( disp_operation == DISP_STATE_NOP )
+        PIN_clear(PORTB, PB2);
+    else
+        PIN_set(PORTB, PB2);
+
     if ( disp_state == DISP_STATE_NOP ){
-        if ( disp_buffers_dirty && disp_operation == DISP_STATE_NOP ){
+        if ( disp_buffers_dirty && ( disp_operation == DISP_STATE_NOP ) ){
+            PIN_toggle(PORTB, PB0);
             if ( disp_column_counter == 0 ){
-                for (uint8_t buff_idx = 0; buff_idx < 8; buff_idx++ ){
+                for (uint8_t buff_idx = disp_active_buffer / 20; buff_idx < ( 4 + ( disp_active_buffer / 20 ) ); buff_idx++ ){
                     if ( ( disp_buffers_dirty >> buff_idx ) & 1 ){
-                        disp_buffer_pointer = &disp_linear_buff + ( buff_idx - 1 ) * 20;
+                        disp_buffer_pointer = &disp_linear_buff + ( buff_idx * 20 );
                         disp_column_counter = 20;
                         disp_buffers_dirty &= ~( 1 << buff_idx );
                         disp_state = DISP_STATE_MCURSOR;
@@ -192,12 +174,15 @@ ISR(TIMER0_COMP_vect){
                 if ( disp_column_counter > 1 ){
                     PIN_set(PORTD, PD3);
                     disp_state = DISP_STATE_PUTHDATA;
-                    disp_temp_data = disp_buffer_pointer++;
+                    disp_temp_data = *disp_buffer_pointer++;
                     disp_column_counter--;
                 } else  disp_column_counter = 0;
             }
-        } else
+        } else {
             disp_state = disp_operation;
+            PIN_clear(PORTB, PB0);
+        }
+            
     }
 
     if ( disp_state == DISP_STATE_MCURSOR ){
@@ -222,11 +207,11 @@ ISR(TIMER0_COMP_vect){
 
     if ( disp_state == DISP_STATE_PUTHDATA || disp_state == DISP_STATE_PUTLDATA ){
         disp_last_state = disp_state;
-        disp_state = DISP_STATE_WAIT;
 
         PORTC &= 0xF0;
-        PORTC |= ( disp_state == DISP_STATE_PUTHDATA ) ? ( disp_temp_data >> 4 ) : disp_temp_data & 0x0F;
+        PORTC |= ( disp_state == DISP_STATE_PUTHDATA ) ? ( disp_temp_data >> 4 ) : ( disp_temp_data & 0x0F );
 
+        disp_state = DISP_STATE_WAIT;
         disp_delay = 1;
     }
 
@@ -261,45 +246,33 @@ ISR(TIMER0_COMP_vect){
 ISR(BADISR_vect){}
 
 void put_line_to_lcd_buffer(unsigned char* text, uint8_t buffer, uint8_t row){
-    if ( row > lcdRows )
-        row = 0;
-    if ( buffer > 1 )
-        buffer = 0;
-    buffer *= 80;
-    row *= 20;
-    for ( uint8_t column = 0; column < 20; column++){
-        *(disp_linear_buff + buffer + row) = *(text + column);
-    }
-    disp_buffers_dirty = 1 << ((buffer * 4) + row);
+    put_data_to_lcd_buffer(&text, 20, 0, row, buffer);
 }
-// add method for adding only text fragments, not whole lines
+
+void put_data_to_lcd_buffer(unsigned char* data, uint8_t length, uint8_t row, uint8_t col, uint8_t buffer){
+    uint8_t temp = 1 << ( ( buffer / 20 ) + row );
+    row *= 20;
+    while ( length-- )
+        *( disp_linear_buff + buffer + row ) = *( data + col++ );
+    disp_buffers_dirty = temp;
+}
+
+uint8_t disp_swap_buffers(void){
+    if ( disp_active_buffer == DISP_FRONTBUFFER ){
+        disp_active_buffer == DISP_BACKBUFFER;
+        disp_buffers_dirty = 0xF0;
+    } else {
+        disp_active_buffer = DISP_FRONTBUFFER;
+        disp_buffers_dirty = 0x0F;
+    }
+    return disp_active_buffer;
+}
 
 // all display methods in FSM in interrupt forbids use of "async" use (i.e. data waiting in interrupt, but data changed in main thread => conflict and data loss)
-// will be done in interrupt
-void lcd_text(unsigned char* text){
-    while(*text){
-        lcd_data((unsigned char) *text++);
-        currentCol++;
-        if ( currentCol > lcdColumns ){
-            currentCol = 0;
-            currentRow++;
-            if ( currentRow > lcdRows ){
-                currentRow = 0;
-            }
-            lcd_move_cursor(currentCol, currentRow);
-        }
-    }
-}
-
-// will be done in interrupt
-void lcd_data(uint8_t data){
-    PIN_set(PORTD, PD3);
-    lcd_write_nibble(data >> 4);
-    lcd_write_nibble(data);
-}
 
 // will be done in interrupt
 void lcd_command(uint8_t command){
+    //while ( disp_operation != DISP_STATE_NOP );
     PIN_clear(PORTD, PD3);
     lcd_write_nibble(command >> 4);
     lcd_write_nibble(command);
@@ -309,22 +282,14 @@ void lcd_command(uint8_t command){
 void lcd_write_nibble(uint8_t data){
     PORTC &= 0xF0;
     PORTC |= (data & 0x0F);
-    wait_us(50);
+    wait_us(200);
 
     PIN_clear(PORTD, PD6);
     PIN_set(PORTD, PD6);
     PIN_clear(PORTD, PD6);
 
-    wait_us(50);
+    wait_us(200);
 }
-
-// will be done in interrupt
-void lcd_move_cursor(uint8_t row, uint8_t col){
-    lcd_command(0b10000000 | ( lcdRowStart[row] + col ));
-    currentCol = col;
-    currentRow = row;
-}
-
 
 // only initialization will be async, but display FSM should be forced NOP when this method is being executed
 void lcd_init(void){
@@ -337,8 +302,8 @@ void lcd_init(void){
     
     lcd_command(0x28);
     
-    llcd_command(0x01);     // lcd clear
-    wait_ms(1);
+    lcd_command(0x01);     // lcd clear
+    wait_ms(2);
 
     lcd_command(0x0C);
     lcd_command(0x06);
@@ -351,7 +316,22 @@ void lcd_init(void){
     lcdRowStart[3] = 0x50 + lcdRows;
     
     lcd_command(0x02);      // lcd home
-    wait_ms(1);
+    wait_ms(2);
+
+    PIN_clear(PORTD, PD2);
+    wait_ms(50);
+    PIN_set(PORTD, PD2);
+    wait_ms(50);
+    PIN_clear(PORTD, PD2);
+    wait_ms(50);
+    PIN_set(PORTD, PD2);
+
+    PIN_set(PORTD, PD3);
+    lcd_write_nibble('O' >> 4);
+    lcd_write_nibble('O');
+    lcd_write_nibble('K' >> 4);
+    lcd_write_nibble('K');
+    wait_ms(80);
 }
 
 void USART_Init( unsigned int ubrr){
@@ -395,8 +375,8 @@ void wait_us(uint8_t us){
 void setup(void){
     cli();
     //USART_Init(96);        // UART - 9600 Baudrate
-    DDRA = ( 1 << PA7 );
-    DDRB = ( 1 << PB0 ) | ( 1 << PB1 ) | ( 1 << PB2) | ( 1 << PB3 );
+    DDRA = 0x80;
+    DDRB = 0x0F;
     DDRC = 0xFF;
     DDRD = 0xFC;
 
@@ -431,46 +411,38 @@ void setup(void){
     compbuff_PWM2 = 0xAA;
 
     lcd_init();
-    lcd_text("Sorter v" TOSTRING(stable_version) "." TOSTRING(beta_version));
-    lcd_move_cursor(1, 0);
-    lcd_text(__DATE__);
-    wait_ms(1000);
-    lcd_clear();
-
     sei();
 }
 
 int main(void){
     setup();
+    put_data_to_lcd_buffer("Sorter v" TOSTRING(stable_version) "." TOSTRING(beta_version), 12, 0, 0, DISP_FRONTBUFFER);
+    put_data_to_lcd_buffer(__DATE__, 11, 1, 0, DISP_FRONTBUFFER);
+    wait_ms(1000);
+    disp_operation = DISP_STATE_CLEAR;
+    while ( disp_operation != DISP_STATE_NOP )  _NOP();
+
+    PIN_clear(PORTD, PD2);
+    wait_ms(50);
+    PIN_set(PORTD, PD2);
+    wait_ms(50);
+    PIN_clear(PORTD, PD2);
+    wait_ms(50);
+    PIN_set(PORTD, PD2);
     
     for(;;){
         wait_ms(100);
 
-        lcd_move_cursor(3, 10);
-        lcd_data((hour >> 4) + '0');
-        lcd_data((hour & 0x0F) + '0');
-        lcd_data(':');
-        lcd_data((min >> 4) + '0');
-        lcd_data((min & 0x0F) + '0');
-        lcd_data(':');
-        lcd_data((sec >> 4) + '0');
-        lcd_move_cursor(3, 17);
-        lcd_text(" ");
-        lcd_move_cursor(3, 17);
-        lcd_data((sec & 0x0F) + '0');
+        // put_data_to_lcd_buffer(actual_num_key + actual_func_key, 2, 0, 0, DISP_FRONTBUFFER);
 
-        lcd_move_cursor(0, 10);
-        lcd_data(actual_num_key);
-        lcd_data(actual_func_key);
+        // put_data_to_lcd_buffer((hour >> 4) + '0' + (hour & 0x0F) + '0' + ':' + (min >> 4) + '0' + (min & 0x0F) + '0' + ':' + (sec >> 4) + '0' + (sec & 0x0F) + '0', 8, 1, 0, DISP_FRONTBUFFER);        
 
         
+        // unsigned char val[10];
+        // sprintf(val, "val: %3d", val_pwm0);
+        // put_data_to_lcd_buffer(val, 9, 2, 0, DISP_FRONTBUFFER);
 
-        unsigned char val[10];
-        sprintf(val, "val: %3d", val_pwm0);
-        lcd_move_cursor(1, 10);
-        lcd_text(val);
-        sprintf(val, "PWM0: %3d", compbuff_PWM0);
-        lcd_move_cursor(2, 10);
-        lcd_text(val);
+        // sprintf(val, "PWM0: %3d", compbuff_PWM0);
+        // put_data_to_lcd_buffer(val, 10, 3, 0, DISP_FRONTBUFFER);
     }
 }
