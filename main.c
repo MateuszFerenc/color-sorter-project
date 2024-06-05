@@ -144,23 +144,12 @@ ISR(TIMER0_COMP_vect){
         }
     }
 
-    if ( disp_state == DISP_STATE_NOP )
-        PIN_clear(PORTB, PB1);
-    else
-        PIN_set(PORTB, PB1);
-
-    if ( disp_operation == DISP_STATE_NOP )
-        PIN_clear(PORTB, PB2);
-    else
-        PIN_set(PORTB, PB2);
-
     if ( disp_state == DISP_STATE_NOP ){
-        if ( disp_buffers_dirty && ( disp_operation == DISP_STATE_NOP ) ){
-            PIN_toggle(PORTB, PB0);
+        if ( ( disp_buffers_dirty || disp_column_counter ) && disp_operation == DISP_STATE_NOP ){
             if ( disp_column_counter == 0 ){
-                for (uint8_t buff_idx = disp_active_buffer / 20; buff_idx < ( 4 + ( disp_active_buffer / 20 ) ); buff_idx++ ){
+                for (uint8_t buff_idx = ( disp_active_buffer / 20 ); buff_idx < ( 4 + ( disp_active_buffer / 20 ) ); buff_idx++ ){
                     if ( ( disp_buffers_dirty >> buff_idx ) & 1 ){
-                        disp_buffer_pointer = &disp_linear_buff + ( buff_idx * 20 );
+                        disp_buffer_pointer = &disp_linear_buff + (unsigned char)( buff_idx * 20 );
                         disp_column_counter = 20;
                         disp_buffers_dirty &= ~( 1 << buff_idx );
                         disp_state = DISP_STATE_MCURSOR;
@@ -171,18 +160,14 @@ ISR(TIMER0_COMP_vect){
                     }
                 }
             } else {
-                if ( disp_column_counter > 1 ){
-                    PIN_set(PORTD, PD3);
-                    disp_state = DISP_STATE_PUTHDATA;
-                    disp_temp_data = *disp_buffer_pointer++;
-                    disp_column_counter--;
-                } else  disp_column_counter = 0;
+                PIN_set(PORTD, PD3);
+                disp_state = DISP_STATE_PUTHDATA;
+                disp_temp_data = *(disp_buffer_pointer++);
+                disp_column_counter--;
             }
         } else {
             disp_state = disp_operation;
-            PIN_clear(PORTB, PB0);
         }
-            
     }
 
     if ( disp_state == DISP_STATE_MCURSOR ){
@@ -245,27 +230,32 @@ ISR(TIMER0_COMP_vect){
 
 ISR(BADISR_vect){}
 
-void put_line_to_lcd_buffer(unsigned char* text, uint8_t buffer, uint8_t row){
-    put_data_to_lcd_buffer(&text, 20, 0, row, buffer);
+void put_line_to_lcd_buffer(char* text, uint8_t buffer, uint8_t row){
+    put_data_to_lcd_buffer(text, 20, 0, row, buffer);
 }
 
-void put_data_to_lcd_buffer(unsigned char* data, uint8_t length, uint8_t row, uint8_t col, uint8_t buffer){
+void put_data_to_lcd_buffer(char* data, uint8_t length, uint8_t row, uint8_t col, uint8_t buffer){
     uint8_t temp = 1 << ( ( buffer / 20 ) + row );
     row *= 20;
-    while ( length-- )
-        *( disp_linear_buff + buffer + row ) = *( data + col++ );
+    for (unsigned char offset = (unsigned char)(buffer + row + col); length > 0 ;length--, offset++ )
+        *( disp_linear_buff + offset ) = *data++;
     disp_buffers_dirty = temp;
 }
 
 uint8_t disp_swap_buffers(void){
     if ( disp_active_buffer == DISP_FRONTBUFFER ){
-        disp_active_buffer == DISP_BACKBUFFER;
+        disp_active_buffer = DISP_BACKBUFFER;
         disp_buffers_dirty = 0xF0;
     } else {
         disp_active_buffer = DISP_FRONTBUFFER;
         disp_buffers_dirty = 0x0F;
     }
     return disp_active_buffer;
+}
+
+void disp_clear_buffer(uint8_t buffer){
+    for (unsigned char offset = (unsigned char)buffer; offset < 80; offset++)
+        *( disp_linear_buff + offset ) = ' ';
 }
 
 // all display methods in FSM in interrupt forbids use of "async" use (i.e. data waiting in interrupt, but data changed in main thread => conflict and data loss)
@@ -318,14 +308,6 @@ void lcd_init(void){
     lcd_command(0x02);      // lcd home
     wait_ms(2);
 
-    PIN_clear(PORTD, PD2);
-    wait_ms(50);
-    PIN_set(PORTD, PD2);
-    wait_ms(50);
-    PIN_clear(PORTD, PD2);
-    wait_ms(50);
-    PIN_set(PORTD, PD2);
-
     PIN_set(PORTD, PD3);
     lcd_write_nibble('O' >> 4);
     lcd_write_nibble('O');
@@ -341,7 +323,7 @@ void USART_Init( unsigned int ubrr){
     UCSRC = (1<<USBS)|(3<<UCSZ0);
 }
 
-void USART_Transmit( unsigned char data ){
+void USART_Transmit( char data ){
     while ( !( UCSRA & (1<<UDRE)) );
     UDR = data;
 }
@@ -356,18 +338,18 @@ void USART_Flush( void ){
     while ( UCSRA & (1<<RXC) ) dummy = UDR;
 }
 
-void USART_text(unsigned char* text){
+void USART_text( char* text ){
     while(*text){
         USART_Transmit((unsigned char) *text++);
     }
 }
 
-void wait_ms(uint16_t ms){
+void wait_ms( uint16_t ms ){
     while(ms--)
         _delay_ms(1);
 }
 
-void wait_us(uint8_t us){
+void wait_us( uint8_t us ){
     while(us--)
         _delay_us(1);
 }
@@ -416,22 +398,17 @@ void setup(void){
 
 int main(void){
     setup();
+    disp_clear_buffer(DISP_FRONTBUFFER);
     put_data_to_lcd_buffer("Sorter v" TOSTRING(stable_version) "." TOSTRING(beta_version), 12, 0, 0, DISP_FRONTBUFFER);
     put_data_to_lcd_buffer(__DATE__, 11, 1, 0, DISP_FRONTBUFFER);
-    wait_ms(1000);
-    disp_operation = DISP_STATE_CLEAR;
-    while ( disp_operation != DISP_STATE_NOP )  _NOP();
+    // wait_ms(1000);
+    // disp_operation = DISP_STATE_CLEAR;
 
-    PIN_clear(PORTD, PD2);
-    wait_ms(50);
-    PIN_set(PORTD, PD2);
-    wait_ms(50);
-    PIN_clear(PORTD, PD2);
-    wait_ms(50);
-    PIN_set(PORTD, PD2);
+
     
     for(;;){
-        wait_ms(100);
+        wait_ms(500);
+        //put_data_to_lcd_buffer("Sorter v" TOSTRING(stable_version) "." TOSTRING(beta_version), 12, 0, 0, DISP_FRONTBUFFER);
 
         // put_data_to_lcd_buffer(actual_num_key + actual_func_key, 2, 0, 0, DISP_FRONTBUFFER);
 

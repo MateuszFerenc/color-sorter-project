@@ -10,7 +10,7 @@ AVRSIZE=avr-size
 AVROBJDUMP=avr-objdump
 
 CC=avr-gcc
-CFLAGS=-Os -DF_CPU=${SPEED} -mmcu=${DEVICE} #-Wall
+CFLAGS=-Os -DF_CPU=${SPEED} -mmcu=${DEVICE} -Wall
 
 PROGRAMMER=USBasp
 AVRDUDE=avrdude
@@ -27,8 +27,8 @@ all: ${OBJS} ${BIN}.elf install
 		${AVRSIZE} --mcu=${DEVICE} -C -x ${BIN}.elf
 		${AVRSIZE} -B -x ${BIN}.elf --mcu=${DEVICE} -d
 
-#debug:
-#		${AVROBJDUMP} -h -S ${BIN}.elf > ${BIN}.lst
+debug:
+		${AVROBJDUMP} -Ss -g -h ${BIN}.elf > ${BIN}.lst
 
 install: ${BIN}.hex
 	${AVRDUDE} -c ${PROGRAMMER} -p ${DEVICE} -U flash:w:$<

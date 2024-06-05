@@ -1,4 +1,4 @@
-#define __AVR_ATmega16__
+//#define __AVR_ATmega16__
 #define F_CPU 14745600UL
 
 // Include section start
@@ -124,15 +124,19 @@ Buzzer                  (PD2)
 
 // Functions definitions start
 
-void USART_Transmit( unsigned char data );
+void USART_Transmit( char data );
 unsigned char USART_Receive( void );
 void USART_Flush( void );
-void USART_text(unsigned char* text);
-void wait_ms(uint16_t ms);
-void wait_us(uint8_t us);
-void lcd_command(uint8_t command);
-void lcd_write_nibble(uint8_t data);
-void lcd_init(void);
+void USART_text( char* text );
+void wait_ms( uint16_t ms );
+void wait_us( uint8_t us );
+void lcd_command( uint8_t command );
+void lcd_write_nibble( uint8_t data );
+void lcd_init( void );
+void put_data_to_lcd_buffer(char* data, uint8_t length, uint8_t row, uint8_t col, uint8_t buffer);
+void put_line_to_lcd_buffer(char* text, uint8_t buffer, uint8_t row);
+void disp_clear_buffer(uint8_t buffer);
+uint8_t disp_swap_buffers(void);
 
 // Functions definitions endl
 
@@ -147,7 +151,7 @@ uint8_t compare_PWM0, compare_PWM1, compare_PWM2;
 volatile uint8_t compbuff_PWM0, compbuff_PWM1, compbuff_PWM2;
 uint8_t actual_num_key = '-', last_num_key = '-', actual_func_key = '-', last_func_key = '-';
 
-unsigned char disp_linear_buff[160] = "";
+unsigned char disp_linear_buff[160] = {" "};
 
 // one properties mem. cell, but I think two will be better, i.e. now need of writing without making buffer dirty
 uint8_t disp_buffers_dirty = 0;        // buffer "dirty" bits, one means buffer updated and ready to display
@@ -158,13 +162,13 @@ uint8_t disp_state = DISP_STATE_NOP, disp_last_state = DISP_STATE_NOP, disp_oper
 uint8_t val_pwm0 = 0;
 
 uint8_t disp_delay = 0, disp_temp_data = 0, disp_column_counter = 0, disp_active_buffer = DISP_FRONTBUFFER;
-uint16_t *disp_buffer_pointer = NULL;
+unsigned char *disp_buffer_pointer = NULL;
 //  Variables end
 
 //  Constans start
-const unsigned char keypad_num0_keys[] PROGMEM = "-12-3";
-const unsigned char keypad_num1_keys[] PROGMEM = "-45-6";
-const unsigned char keypad_num2_keys[] PROGMEM = "-78-9";
-const unsigned char keypad_num3_keys[] PROGMEM = "-*0-#";
-const unsigned char keypad_func_keys[] PROGMEM = "-ABCD";
+const unsigned char keypad_num0_keys[5] PROGMEM = "-12-3";
+const unsigned char keypad_num1_keys[5] PROGMEM = "-45-6";
+const unsigned char keypad_num2_keys[5] PROGMEM = "-78-9";
+const unsigned char keypad_num3_keys[5] PROGMEM = "-*0-#";
+const unsigned char keypad_func_keys[5] PROGMEM = "-ABCD";
 //  Constans end
