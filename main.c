@@ -37,9 +37,9 @@ ISR(TIMER2_COMP_vect){
             adc_hold = 1;       // hold conversion for stable readings
         }
     }
-    if ( system_counter % 256 == 0 && system_counter != 0 ){
-        USART_text("Interrupt! (256 * 0.625ms = 160ms)\n\r");
-    }
+    //if ( system_counter % 256 == 0 && system_counter != 0 ){
+    //    USART_text("Interrupt! (256 * 0.625ms = 160ms)\n\r");
+    //}
 
     if (system_counter % 16 == 0 && system_counter != 0){
         if ( actual_func_key == 'D' && last_func_key == 'D' ){
@@ -147,14 +147,15 @@ ISR(TIMER0_COMP_vect){
     if ( disp_state == DISP_STATE_NOP ){
         if ( ( disp_buffers_dirty || disp_column_counter ) && disp_operation == DISP_STATE_NOP ){
             if ( disp_column_counter == 0 ){
-                for (uint8_t buff_idx = ( disp_active_buffer / 20 ); buff_idx < ( 4 + ( disp_active_buffer / 20 ) ); buff_idx++ ){
+                unsigned char temp_buff_addr = ( disp_active_buffer / 20 );
+                for (unsigned char buff_idx = 0; buff_idx < 4; buff_idx++ ){
                     if ( ( disp_buffers_dirty >> buff_idx ) & 1 ){
-                        disp_buffer_pointer = &disp_linear_buff + (unsigned char)( buff_idx * 20 );
+                        disp_buffer_pointer = (unsigned char *)disp_linear_buff + (unsigned char)(buff_idx * 20);// + (unsigned char)(buff_idx * 20);
                         disp_column_counter = 20;
                         disp_buffers_dirty &= ~( 1 << buff_idx );
                         disp_state = DISP_STATE_MCURSOR;
                         currentCol = 0;
-                        currentRow = buff_idx % 4;
+                        currentRow = buff_idx;
                         disp_temp_data = 0x80 | lcdRowStart[currentRow];
                         break;
                     }
@@ -236,9 +237,11 @@ void put_line_to_lcd_buffer(char* text, uint8_t buffer, uint8_t row){
 
 void put_data_to_lcd_buffer(char* data, uint8_t length, uint8_t row, uint8_t col, uint8_t buffer){
     uint8_t temp = 1 << ( ( buffer / 20 ) + row );
-    row *= 20;
-    for (unsigned char offset = (unsigned char)(buffer + row + col); length > 0 ;length--, offset++ )
+    for (unsigned char offset = (unsigned char)(buffer + (row * 20) + col); length > 0 ; length--, offset++ ){
+        if ( *data < 32 )
+            continue;
         *( disp_linear_buff + offset ) = *data++;
+    }
     disp_buffers_dirty = temp;
 }
 
@@ -254,7 +257,7 @@ uint8_t disp_swap_buffers(void){
 }
 
 void disp_clear_buffer(uint8_t buffer){
-    for (unsigned char offset = (unsigned char)buffer; offset < 80; offset++)
+    for (unsigned char offset = (unsigned char)buffer; offset < (80 + buffer); offset++)
         *( disp_linear_buff + offset ) = ' ';
 }
 
@@ -404,6 +407,16 @@ int main(void){
     // wait_ms(1000);
     // disp_operation = DISP_STATE_CLEAR;
 
+    // for test purposes of display buffer
+    // for (unsigned char offset = 0; offset < 10 ; offset++ ){
+    //     *( disp_linear_buff + offset ) = '0' + offset;
+    // }
+
+    // for (unsigned char offset = 0; offset < 10 ; offset++ ){
+    //     *( disp_linear_buff + offset + 40) = 'a' + offset;
+    // }
+
+    // disp_buffers_dirty = 15;
 
     
     for(;;){

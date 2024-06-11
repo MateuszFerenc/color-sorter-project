@@ -50,8 +50,8 @@
 #define PWM1            1
 #define PWM2            2
 
-#define DISP_FRONTBUFFER    (uint8_t)   0
-#define DISP_BACKBUFFER     (uint8_t)   80
+#define DISP_FRONTBUFFER    (unsigned char)   0
+#define DISP_BACKBUFFER     (unsigned char)   80
 
 // Preprocessor definitions end
 
@@ -151,7 +151,7 @@ uint8_t compare_PWM0, compare_PWM1, compare_PWM2;
 volatile uint8_t compbuff_PWM0, compbuff_PWM1, compbuff_PWM2;
 uint8_t actual_num_key = '-', last_num_key = '-', actual_func_key = '-', last_func_key = '-';
 
-unsigned char disp_linear_buff[160] = {" "};
+unsigned char disp_linear_buff[160];
 
 // one properties mem. cell, but I think two will be better, i.e. now need of writing without making buffer dirty
 uint8_t disp_buffers_dirty = 0;        // buffer "dirty" bits, one means buffer updated and ready to display
