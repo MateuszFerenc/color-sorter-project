@@ -150,7 +150,7 @@ ISR(TIMER0_COMP_vect){
                 unsigned char temp_buff_addr = ( disp_active_buffer / 20 );
                 for (unsigned char buff_idx = 0; buff_idx < 4; buff_idx++ ){
                     if ( ( disp_buffers_dirty >> buff_idx ) & 1 ){
-                        disp_buffer_pointer = (unsigned char *)disp_linear_buff + (unsigned char)(buff_idx * 20);// + (unsigned char)(buff_idx * 20);
+                        disp_buffer_pointer = (unsigned char *)disp_linear_buff + (unsigned char)(buff_idx * 20);
                         disp_column_counter = 20;
                         disp_buffers_dirty &= ~( 1 << buff_idx );
                         disp_state = DISP_STATE_MCURSOR;
@@ -242,7 +242,7 @@ void put_data_to_lcd_buffer(char* data, uint8_t length, uint8_t row, uint8_t col
             continue;
         *( disp_linear_buff + offset ) = *data++;
     }
-    disp_buffers_dirty = temp;
+    disp_buffers_dirty |= temp;
 }
 
 uint8_t disp_swap_buffers(void){
@@ -401,19 +401,33 @@ void setup(void){
 
 int main(void){
     setup();
-    disp_clear_buffer(DISP_FRONTBUFFER);
-    put_data_to_lcd_buffer("Sorter v" TOSTRING(stable_version) "." TOSTRING(beta_version), 12, 0, 0, DISP_FRONTBUFFER);
-    put_data_to_lcd_buffer(__DATE__, 11, 1, 0, DISP_FRONTBUFFER);
-    // wait_ms(1000);
-    // disp_operation = DISP_STATE_CLEAR;
 
-    // for test purposes of display buffer
+    disp_clear_buffer(DISP_FRONTBUFFER);
+
+    put_data_to_lcd_buffer("Sorter v" TOSTRING(stable_version) "." TOSTRING(beta_version), 11, 0, 0, DISP_FRONTBUFFER);
+    put_data_to_lcd_buffer(__DATE__, 11, 1, 0, DISP_FRONTBUFFER);
+
+    wait_ms(1000);
+
+    disp_operation = DISP_STATE_CLEAR;
+    disp_clear_buffer(DISP_FRONTBUFFER);
+
+    //for test purposes of display buffer
+    // wait_ms(1000);
     // for (unsigned char offset = 0; offset < 10 ; offset++ ){
     //     *( disp_linear_buff + offset ) = '0' + offset;
     // }
 
     // for (unsigned char offset = 0; offset < 10 ; offset++ ){
-    //     *( disp_linear_buff + offset + 40) = 'a' + offset;
+    //     *( disp_linear_buff + offset + 20) = 'a' + offset;
+    // }
+
+    // for (unsigned char offset = 0; offset < 10 ; offset++ ){
+    //     *( disp_linear_buff + offset + 40 ) = 'A' + offset;
+    // }
+
+    // for (unsigned char offset = 0; offset < 10 ; offset++ ){
+    //     *( disp_linear_buff + offset + 60) = ' ' + offset;
     // }
 
     // disp_buffers_dirty = 15;
@@ -421,18 +435,20 @@ int main(void){
     
     for(;;){
         wait_ms(500);
-        //put_data_to_lcd_buffer("Sorter v" TOSTRING(stable_version) "." TOSTRING(beta_version), 12, 0, 0, DISP_FRONTBUFFER);
 
-        // put_data_to_lcd_buffer(actual_num_key + actual_func_key, 2, 0, 0, DISP_FRONTBUFFER);
+        unsigned char val[10];
+        sprintf(val, "%c%c", actual_num_key, actual_func_key);
+        put_data_to_lcd_buffer(val, 2, 0, 0, DISP_FRONTBUFFER);
 
-        // put_data_to_lcd_buffer((hour >> 4) + '0' + (hour & 0x0F) + '0' + ':' + (min >> 4) + '0' + (min & 0x0F) + '0' + ':' + (sec >> 4) + '0' + (sec & 0x0F) + '0', 8, 1, 0, DISP_FRONTBUFFER);        
-
+        //put_data_to_lcd_buffer((hour >> 4) + '0' + (hour & 0x0F) + '0' + ':' + (min >> 4) + '0' + (min & 0x0F) + '0' + ':' + (sec >> 4) + '0' + (sec & 0x0F) + '0', 8, 1, 0, DISP_FRONTBUFFER);        
+        sprintf(val, "%02x:%02x:%02x", hour, min, sec);
+        put_data_to_lcd_buffer(val, 8, 1, 0, DISP_FRONTBUFFER);
         
-        // unsigned char val[10];
-        // sprintf(val, "val: %3d", val_pwm0);
-        // put_data_to_lcd_buffer(val, 9, 2, 0, DISP_FRONTBUFFER);
+        
+        sprintf(val, "val: %3d", val_pwm0);
+        put_data_to_lcd_buffer(val, 9, 2, 0, DISP_FRONTBUFFER);
 
-        // sprintf(val, "PWM0: %3d", compbuff_PWM0);
-        // put_data_to_lcd_buffer(val, 10, 3, 0, DISP_FRONTBUFFER);
+        sprintf(val, "PWM0: %3d", compbuff_PWM0);
+        put_data_to_lcd_buffer(val, 10, 3, 0, DISP_FRONTBUFFER);
     }
 }
