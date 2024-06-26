@@ -187,7 +187,8 @@ uint8_t menu_state = MENU_STATE_MAIN;
 uint8_t selected_object = 0;            // bit 7 - blink state, bits 6:0 - selection
 
 uint8_t blink_position = 0;             // bits 7 - blink state, 6:5 - row, 4:0 - column
-uint8_t blink_conf = 0;                 // bits 7:4 - period [0 - off, 1-15 - val * 80 ms], 3:0 - length [1-16 characters]
+uint8_t blink_conf = 0;                 // bits 7:4 - period [0 - off, 1-15], 3:0 - length [1-16 characters]
+// period = 0.625ms * ( 2 ^ ( 7 + blink_conf[7:4] ) )
 unsigned char blink_buffer[16];
 //  Variables end
 

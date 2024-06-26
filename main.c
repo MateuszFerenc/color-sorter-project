@@ -41,28 +41,30 @@ ISR(TIMER2_COMP_vect){
     //    USART_text("Interrupt! (256 * 0.625ms = 160ms)\n\r");
     //}
 
-    if (system_counter % 16 == 0 && system_counter != 0){
-        if ( actual_func_key == 'D' && last_func_key == 'D' ){
-            selected_digit = 1;
-        }
+    // Saved for later
+    // if (system_counter % 16 == 0 && system_counter != 0){
+    //     if ( actual_func_key == 'D' && last_func_key == 'D' ){
+    //         selected_digit = 1;
+    //     }
 
-        if ( selected_digit > 0 ){
-            if ( actual_num_key != last_num_key && actual_num_key != '-' ){
-                val_pwm0 = val_pwm0 * 10 + ( actual_num_key - '0' );
-                selected_digit++;
-            }
-            if ( selected_digit > 4 ){
-                val_pwm0 = 0;
-                selected_digit = 1;
-            }
-        }
+    //     if ( selected_digit > 0 ){
+    //         if ( actual_num_key != last_num_key && actual_num_key != '-' ){
+    //             val_pwm0 = val_pwm0 * 10 + ( actual_num_key - '0' );
+    //             selected_digit++;
+    //         }
+    //         if ( selected_digit > 4 ){
+    //             val_pwm0 = 0;
+    //             selected_digit = 1;
+    //         }
+    //     }
 
-        if ( actual_func_key == 'A' && last_func_key == 'A' && selected_digit > 0 ){
-            compbuff_PWM0 = val_pwm0;
-            val_pwm0 = 0;
-            selected_digit = 0;
-        }
-    }
+    //     if ( actual_func_key == 'A' && last_func_key == 'A' && selected_digit > 0 ){
+    //         compbuff_PWM0 = val_pwm0;
+    //         val_pwm0 = 0;
+    //         selected_digit = 0;
+    //     }
+    // }
+
     // correction available
     // 2^16 = 65536 when 2^16 / 3200 = 20.48, which means that every counter reload lacks 1664 ticks
     // so when we correct modulo after missing cycle, we can achieve stable clock
@@ -95,21 +97,15 @@ ISR(TIMER2_COMP_vect){
         }
     }
 
-    // TODO blink function
-    // if ( system_counter % 128 == 0 && system_counter != 0 ){
-    //     if ( blink_conf & 0xF0 ){
-    //         if ( blink_position & 0x80 ){
-    //             unsigned char position = (unsigned char)(disp_active_buffer + ((( blink_position >> 5) & 3) * 20) + ( blink_position & 0x0F ));
-    //             for (unsigned char length = ( blink_conf & 0x0F ) ; length > 0 ; length-- ){
-    //                     *( disp_linear_buff + position ) = 255;
-    //                 position++;
-    //             }
-    //             disp_buffers_dirty |= 1 << ( ( disp_active_buffer / 20 ) + (( blink_position >> 5) & 3) );
-    //         } else {
-
-    //         }
-    //     }
-    // }
+    if ( blink_conf & 0xF0 ){
+        if ( system_counter % (2 << ( 7 + ( blink_conf >> 4)) ) == 0 && system_counter != 0 ){
+            if (blink_position & 0x80)
+                put_data_to_lcd_buffer(&blink_buffer, blink_conf & 0x0F, (blink_position >> 5) & 3, blink_position & 0x0F, disp_active_buffer, 0);
+            else
+                put_one_char(255, blink_conf & 0x0F, (blink_position >> 5) & 3, blink_position & 0x0F, disp_active_buffer);
+            blink_position ^= 0x80;
+        }
+    }
 
     system_counter++;
     sec_counter++;
@@ -347,7 +343,24 @@ void lcd_init(void){
     wait_ms(80);
 }
 
-// TODO blink init
+uint8_t blink_init(uint8_t row, uint8_t col, uint8_t length, uint8_t period){
+    if ( col + length > 20)
+        return 255;
+
+    unsigned char offset = (unsigned char)(disp_active_buffer + (row * 20) + col);
+    for ( unsigned char character; character < length; character++){
+        *( blink_buffer + character ) = *( disp_linear_buff + offset + character );
+    }
+
+    blink_position = ( row & 3 ) << 5 | ( col & 15 );
+    blink_conf = ( period & 15 ) << 4 | ( length & 15);
+
+    return 0;
+}
+
+void blink_stop(){
+    blink_conf = 0;
+}
 
 void USART_Init( unsigned int ubrr){
     UBRRH = (unsigned char)(ubrr>>8);
@@ -461,25 +474,100 @@ int main(void){
     disp_clear_buffer(DISP_FRONTBUFFER);
     
     for(;;){
-        wait_ms(20);
+        wait_ms(5);
 
         if ( menu_state == MENU_STATE_MAIN ){
             put_data_to_lcd_buffer(&menu0_line0_start, 5, 0, 7, DISP_FRONTBUFFER, 1);
             put_data_to_lcd_buffer(&menu0_line1, 14, 1, 3, DISP_FRONTBUFFER, 1);
             put_data_to_lcd_buffer(&menu0_line2, 8, 2, 6, DISP_FRONTBUFFER, 1);
             put_data_to_lcd_buffer(&menu0_line3, 9, 3, 6, DISP_FRONTBUFFER, 1);
+
+            blink_init(0, 7, 5, 3);     // period = 640ms
             menu_state = MENU_STATE_START;
         }
         if ( menu_state == MENU_STATE_START ){
-            if ( (selected_object & 0x7F) == 0 ){
-                if ( selected_object & 0x80 ){
-                    put_data_to_lcd_buffer(&menu0_line0_start, 5, 0, 7, DISP_FRONTBUFFER, 1);
-                } else {
-                    //put_data_to_lcd_buffer(&menu0_line0_stop, 5, 0, 7, DISP_FRONTBUFFER, 0);
-                    put_one_char(255, 5, 0, 7, DISP_FRONTBUFFER);
+            if ( actual_func_key == 'A' && last_func_key == 'A' )
+                if ( actual_num_key == '-' && last_num_key == '8'){
+                    blink_stop();
+                    blink_init(1, 3, 14, 3);
+                    menu_state = MENU_STATE_SELECT;
+                } else 
+                if ( actual_num_key == '-' && last_num_key == '5' ){
+                    blink_stop();
+                    menu_state = 10;
+                    disp_operation = DISP_STATE_CLEAR;
+                    disp_clear_buffer(DISP_FRONTBUFFER);
+                } else
+                if ( actual_num_key == '-' && last_num_key == '2' ){
+                    blink_stop();
+                    blink_init(3, 6, 9, 3);
+                    menu_state = MENU_STATE_PWROFF;
                 }
-                selected_object ^= 0x80;
-            }
+                if ( menu_state != MENU_STATE_START && menu_state != 10 )
+                    put_data_to_lcd_buffer(&menu0_line0_start, 5, 0, 7, DISP_FRONTBUFFER, 1);
+        } else
+        if ( menu_state == MENU_STATE_SELECT ){
+            if ( actual_func_key == 'A' && last_func_key == 'A' )
+                if ( actual_num_key == '-' && last_num_key == '8'){
+                    blink_stop();
+                    blink_init(2, 6, 8, 3);
+                    menu_state = MENU_STATE_SETTINGS;
+                } else 
+                if ( actual_num_key == '-' && last_num_key == '5' ){
+                    blink_stop();
+                    menu_state = 10;
+                    disp_operation = DISP_STATE_CLEAR;
+                    disp_clear_buffer(DISP_FRONTBUFFER);
+                } else
+                if ( actual_num_key == '-' && last_num_key == '2' ){
+                    blink_stop();
+                    blink_init(0, 7, 5, 3);
+                    menu_state = MENU_STATE_START;
+                }
+                if ( menu_state != MENU_STATE_SELECT && menu_state != 10 )
+                    put_data_to_lcd_buffer(&menu0_line1, 14, 1, 3, DISP_FRONTBUFFER, 1);
+        } else
+        if ( menu_state == MENU_STATE_SETTINGS ){
+            if ( actual_func_key == 'A' && last_func_key == 'A' )
+                if ( actual_num_key == '-' && last_num_key == '8'){
+                    blink_stop();
+                    blink_init(3, 6, 9, 3);
+                    menu_state = MENU_STATE_PWROFF;
+                } else 
+                if ( actual_num_key == '-' && last_num_key == '5' ){
+                    blink_stop();
+                    menu_state = 10;
+                    disp_operation = DISP_STATE_CLEAR;
+                    disp_clear_buffer(DISP_FRONTBUFFER);
+                } else
+                if ( actual_num_key == '-' && last_num_key == '2' ){
+                    blink_stop();
+                    blink_init(1, 3, 14, 3);
+                    menu_state = MENU_STATE_SELECT;
+                }
+                if ( menu_state != MENU_STATE_SETTINGS && menu_state != 10 )
+                    put_data_to_lcd_buffer(&menu0_line2, 8, 2, 6, DISP_FRONTBUFFER, 1);
+        } else
+        if ( menu_state == MENU_STATE_PWROFF ){
+            if ( actual_func_key == 'A' && last_func_key == 'A' )
+                if ( actual_num_key == '-' && last_num_key == '8'){
+                    blink_stop();
+                    blink_init(0, 7, 5, 3);
+                    menu_state = MENU_STATE_START;
+                } else 
+                if ( actual_num_key == '-' && last_num_key == '5' ){
+                    blink_stop();
+                    menu_state = 10;
+                    disp_operation = DISP_STATE_CLEAR;
+                    disp_clear_buffer(DISP_FRONTBUFFER);
+                } else
+                if ( actual_num_key == '-' && last_num_key == '2' ){
+                    blink_stop();
+                    blink_init(2, 6, 8, 3);
+                    menu_state = MENU_STATE_SETTINGS;
+                }
+                if ( menu_state != MENU_STATE_PWROFF && menu_state != 10 )
+                    put_data_to_lcd_buffer(&menu0_line3, 9, 3, 6, DISP_FRONTBUFFER, 1);
         }
     }
 }
