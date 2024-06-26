@@ -53,6 +53,25 @@
 #define DISP_FRONTBUFFER    (unsigned char)   0
 #define DISP_BACKBUFFER     (unsigned char)   80
 
+#define RED_LED_pin         PB0
+#define RED_LED_port        PORTB
+#define GREEN_LED_pin       PB1
+#define GREEN_LED_port      PORTB
+#define BLUE_LED_pin        PB2
+#define BLUE_LED_port       PORTB
+#define WHITE_LED_pin       PA7
+#define WHITE_LED_port      PORTA
+
+#define BUZZER_pin          PD2
+#define BUZZER_port         PORTD
+
+#define MENU_STATE_MAIN         0
+#define MENU_STATE_START        1
+#define MENU_STATE_STOP         2
+#define MENU_STATE_SELECT       3
+#define MENU_STATE_SETTINGS     4
+#define MENU_STATE_PWROFF       5
+
 // Preprocessor definitions end
 
 /* J1 - Metal stage
@@ -133,8 +152,8 @@ void wait_us( uint8_t us );
 void lcd_command( uint8_t command );
 void lcd_write_nibble( uint8_t data );
 void lcd_init( void );
-void put_data_to_lcd_buffer(char* data, uint8_t length, uint8_t row, uint8_t col, uint8_t buffer);
-void put_line_to_lcd_buffer(char* text, uint8_t buffer, uint8_t row);
+void put_data_to_lcd_buffer(unsigned char* data, uint8_t length, uint8_t row, uint8_t col, uint8_t buffer, uint8_t from_flash);
+void put_line_to_lcd_buffer(unsigned char* text, uint8_t buffer, uint8_t row, uint8_t from_flash);
 void disp_clear_buffer(uint8_t buffer);
 uint8_t disp_swap_buffers(void);
 
@@ -163,6 +182,13 @@ uint8_t val_pwm0 = 0;
 
 uint8_t disp_delay = 0, disp_temp_data = 0, disp_column_counter = 0, disp_active_buffer = DISP_FRONTBUFFER;
 unsigned char *disp_buffer_pointer = NULL;
+
+uint8_t menu_state = MENU_STATE_MAIN;
+uint8_t selected_object = 0;            // bit 7 - blink state, bits 6:0 - selection
+
+uint8_t blink_position = 0;             // bits 7 - blink state, 6:5 - row, 4:0 - column
+uint8_t blink_conf = 0;                 // bits 7:4 - period [0 - off, 1-15 - val * 80 ms], 3:0 - length [1-16 characters]
+unsigned char blink_buffer[16];
 //  Variables end
 
 //  Constans start
@@ -171,4 +197,10 @@ const unsigned char keypad_num1_keys[5] PROGMEM = "-45-6";
 const unsigned char keypad_num2_keys[5] PROGMEM = "-78-9";
 const unsigned char keypad_num3_keys[5] PROGMEM = "-*0-#";
 const unsigned char keypad_func_keys[5] PROGMEM = "-ABCD";
+
+const unsigned char menu0_line0_start[5] PROGMEM = "START";
+const unsigned char menu0_line0_stop[4] PROGMEM = "STOP";
+const unsigned char menu0_line1[14] PROGMEM = "select program";
+const unsigned char menu0_line2[8] PROGMEM = "settings";
+const unsigned char menu0_line3[9] PROGMEM = "power off";
 //  Constans end
