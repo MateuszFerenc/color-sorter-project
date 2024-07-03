@@ -26,7 +26,7 @@
 
 // sense stages ADC channels PORTA
 #define metal_sense_adc 0
-#define glass_sense_adc 1
+//#define glass_sense_adc 1     NOT USED
 #define color_sense_adc 2
 
 #define DISP_STATE_NOP              0
@@ -156,6 +156,9 @@ void put_data_to_lcd_buffer(unsigned char* data, uint8_t length, uint8_t row, ui
 void put_line_to_lcd_buffer(unsigned char* text, uint8_t buffer, uint8_t row, uint8_t from_flash);
 void disp_clear_buffer(uint8_t buffer);
 uint8_t disp_swap_buffers(void);
+uint8_t blink_init(uint8_t row, uint8_t col, uint8_t length, uint8_t period);
+void blink_stop( void );
+uint8_t read_keypad( void );
 
 // Functions definitions endl
 
@@ -168,7 +171,7 @@ uint8_t lcdColumns, lcdRows, currentCol, currentRow, lcdRowStart[4];
 
 uint8_t compare_PWM0, compare_PWM1, compare_PWM2;
 volatile uint8_t compbuff_PWM0, compbuff_PWM1, compbuff_PWM2;
-uint8_t actual_num_key = '-', last_num_key = '-', actual_func_key = '-', last_func_key = '-';
+uint8_t key_code = 0;           // 0 - no key pressed
 
 unsigned char disp_linear_buff[160];
 
