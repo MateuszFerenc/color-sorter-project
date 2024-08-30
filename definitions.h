@@ -19,6 +19,9 @@
 #define PIN_toggle(port, pin)               port ^= ( 1 << pin )
 #define PIN_control(port, pin, state)       port = ( port & ~( 1 << pin ) ) | ( state << pin )
 
+#define PIN_is_high(pinport, pin)           (pinport & ( 1 << pin )) > 0
+#define PIN_is_low(pinport, pin)            (pinport & ( 1 << pin )) == 0
+
 #define STRINGIFY(x) #x
 #define TOSTRING(x) STRINGIFY(x)
 #define stable_version  0
@@ -71,6 +74,16 @@
 #define MENU_STATE_SELECT       3
 #define MENU_STATE_SETTINGS     4
 #define MENU_STATE_PWROFF       5
+#define MENU_STATE_START_ACTIVE         6
+#define MENU_STATE_SELECT_ACTIVE        7
+#define MENU_STATE_SETTINGS_ACTIVE      8
+#define MENU_STATE_PWROFF_ACTIVE        9
+#define MENU_STATE_DRIVE                255
+
+#define STAGE_STATE_WAIT                0
+#define STAGE_STATE_IN                  1
+#define STAGE_STATE_MEASURE             2
+#define STAGE_STATE_OUT                 3
 
 // Preprocessor definitions end
 
@@ -81,7 +94,7 @@
 */
 
 /* J2 - Glass stage
-1 - glass sense         (PA1)
+1 - glass sense         (N.C.)
 2 - object present 1    (PA5)
 3 - stage 1 motor       (PD5)
 */
@@ -141,6 +154,10 @@
 Buzzer                  (PD2)
 */
 
+/*
+LCD Backlight           (PA1)
+*/
+
 // Functions definitions start
 
 void USART_Transmit( char data );
@@ -187,7 +204,7 @@ uint8_t val_pwm0 = 0;
 uint8_t disp_delay = 0, disp_temp_data = 0, disp_column_counter = 0, disp_active_buffer = DISP_FRONTBUFFER;
 unsigned char *disp_buffer_pointer = NULL;
 
-uint8_t menu_state = MENU_STATE_MAIN;
+uint8_t menu_state = MENU_STATE_MAIN, last_menu_state = MENU_STATE_MAIN;
 uint8_t selected_object = 0;            // bit 7 - blink state, bits 6:0 - selection
 
 uint8_t blink_position = 0;             // bits 7 - blink state, 6:5 - row, 4:0 - column

@@ -13,26 +13,24 @@ ISR(TIMER2_COMP_vect){
             } else
                 adc_hold++;
         } else {
-            // if ( selected_adc_channel == metal_sense_adc ){
-            //     selected_adc_channel = glass_sense_adc;
-            //     metal_sense_value -= metal_sense_buffer[adc_read_count];
-            //     metal_sense_buffer[adc_read_count] = ADC;
-            //     metal_sense_value += metal_sense_buffer[adc_read_count];
-            // } else if ( selected_adc_channel == glass_sense_adc ){
-            //     selected_adc_channel = color_sense_adc;
-            //     glass_sense_value -= glass_sense_buffer[adc_read_count];
-            //     glass_sense_buffer[adc_read_count] = ADC;
-            //     glass_sense_value += glass_sense_buffer[adc_read_count];
-            // } else {
-            //     selected_adc_channel = metal_sense_adc;
-            //     color_sense_value -= color_sense_buffer[adc_read_count];
-            //     color_sense_buffer[adc_read_count] = ADC;
-            //     color_sense_value += color_sense_buffer[adc_read_count];
-            //     adc_read_count++;
-            //     if ( adc_read_count > 9){
-            //         adc_read_count = 0;
-            //     }                
-            // }
+            if ( last_menu_state == MENU_STATE_DRIVE ){
+                if ( selected_adc_channel == metal_sense_adc ){
+                    selected_adc_channel = color_sense_adc;
+                    metal_sense_value -= metal_sense_buffer[adc_read_count];
+                    metal_sense_buffer[adc_read_count] = ADC;
+                    metal_sense_value += metal_sense_buffer[adc_read_count];
+                } else
+                if ( selected_adc_channel == color_sense_adc ){
+                    selected_adc_channel = metal_sense_adc;
+                    color_sense_value -= color_sense_buffer[adc_read_count];
+                    color_sense_buffer[adc_read_count] = ADC;
+                    color_sense_value += color_sense_buffer[adc_read_count];
+                    adc_read_count++;
+                    if ( adc_read_count > 9){
+                        adc_read_count = 0;
+                    }  
+                }
+            }
             ADMUX = ( 1 << REFS0) | ( selected_adc_channel & 0x0F );        // switch ADC mux to other channel
             adc_hold = 1;       // hold conversion for stable readings
         }
@@ -439,8 +437,8 @@ void setup(void){
     PORTC = 0xF0;
     PORTD = 0x04;
 
-    //ADMUX = ( 1 << REFS0) | (metal_sense_adc & 0x1F);
-    //ADCSRA = ( 1 << ADEN ) | ( 1 << ADSC ) | (1 << ADPS2 ) | ( 1 << ADPS1 ) | ( 1 << ADPS0 );   // Adc single shot mode, clk/128
+    ADMUX = ( 1 << REFS0) | (metal_sense_adc & 0x1F);
+    ADCSRA = ( 1 << ADEN ) | ( 1 << ADSC ) | (1 << ADPS2 ) | ( 1 << ADPS1 ) | ( 1 << ADPS0 );   // Adc single shot mode, clk/128
 
     // Software PWM timer (50Hz)
     // 50 Hz with 8bit resolution => update every 20ms and 256 samples => update every 155 us
@@ -508,18 +506,47 @@ int main(void){
     disp_operation = DISP_STATE_CLEAR;
     disp_clear_buffer(DISP_FRONTBUFFER);
 
-    uint8_t actual_character = 0;
+    uint8_t actual_character = 0, last_character = 0;
     uint8_t selected_digit = 0;
     
-    uint8_t color = 0, wait = 0;    
+    uint8_t keypad_press_wait = 4, keypad_hold_wait = 3;    
+
+    uint8_t stage1_state = STAGE_STATE_WAIT;
+    //uint8_t stage2_state = STAGE_STATE_WAIT;
+    uint8_t stage3_state = STAGE_STATE_WAIT;
+
+
+    uint8_t stage1_in_wait = 50, stage1_out_wait = 50, stage1_servo = 0;
+    //uint8_t stage2_in_wait = 2, stage2_out_wait = 2, stage2_servo = 0;
+    uint8_t stage3_in_wait = 50, stage3_out_wait = 50, stage3_servo = 0;
+
     for(;;){
         wait_ms(5);
 
-        // unsigned char val[10];
-        // sprintf(val, "%003d", key_code);
-        // put_data_to_lcd_buffer(val, 3, 0, 0, DISP_FRONTBUFFER, 0);
-
         actual_character = read_keypad();
+
+
+        unsigned char val[10];
+        // sprintf(val, "%01d%01d", PIN_is_low(PINA, PA4), PIN_is_low(PINA, PA6));
+        // put_data_to_lcd_buffer(val, 2, 0, 0, DISP_FRONTBUFFER, 0);
+
+
+        if (--keypad_press_wait > 0 && keypad_hold_wait == 3){
+            if ( actual_character != last_character ){
+                keypad_press_wait = 4;
+                last_character = actual_character;
+            }
+            actual_character = 0;
+        } else {
+            keypad_press_wait = 4;
+            if (--keypad_hold_wait > 0 ){
+                if ( actual_character == last_character ){
+                    keypad_hold_wait = 2;
+                }
+                actual_character = 0;
+            } else
+                keypad_hold_wait = 3;
+        }
 
         if ( menu_state == MENU_STATE_MAIN ){
             put_data_to_lcd_buffer(&menu0_line0_start, 5, 0, 7, DISP_FRONTBUFFER, 1);
@@ -530,7 +557,11 @@ int main(void){
             blink_init(0, 7, 5, 3);     // period = 640ms
             menu_state = MENU_STATE_START;
         }
+        if ( menu_state == last_menu_state && actual_character == 0 ){
+            // do nothing
+        } else
         if ( menu_state == MENU_STATE_START ){
+            last_menu_state = menu_state;
                 if ( actual_character == 48 ){
                     blink_stop();
                     blink_init(1, 3, 14, 3);
@@ -538,19 +569,21 @@ int main(void){
                 } else 
                 if ( actual_character == 41 ){
                     blink_stop();
-                    menu_state = 10;
+                    menu_state = MENU_STATE_START_ACTIVE;
                     disp_operation = DISP_STATE_CLEAR;
                     disp_clear_buffer(DISP_FRONTBUFFER);
+                    put_data_to_lcd_buffer("TEST RUN", 8, 0, 0, DISP_FRONTBUFFER, 0);
                 } else
                 if (  actual_character == 34 ){
                     blink_stop();
                     blink_init(3, 6, 9, 3);
                     menu_state = MENU_STATE_PWROFF;
                 }
-                if ( menu_state != MENU_STATE_START && menu_state != 10 )
+                if ( menu_state != MENU_STATE_START && menu_state != MENU_STATE_START_ACTIVE )
                     put_data_to_lcd_buffer(&menu0_line0_start, 5, 0, 7, DISP_FRONTBUFFER, 1);
         } else
         if ( menu_state == MENU_STATE_SELECT ){
+            last_menu_state = menu_state;
                 if ( actual_character == 48 ){
                     blink_stop();
                     blink_init(2, 6, 8, 3);
@@ -558,7 +591,7 @@ int main(void){
                 } else 
                 if ( actual_character == 41 ){
                     blink_stop();
-                    menu_state = 10;
+                    menu_state = MENU_STATE_SELECT_ACTIVE;
                     disp_operation = DISP_STATE_CLEAR;
                     disp_clear_buffer(DISP_FRONTBUFFER);
                 } else
@@ -567,10 +600,11 @@ int main(void){
                     blink_init(0, 7, 5, 3);
                     menu_state = MENU_STATE_START;
                 }
-                if ( menu_state != MENU_STATE_SELECT && menu_state != 10 )
+                if ( menu_state != MENU_STATE_SELECT && menu_state != MENU_STATE_SELECT_ACTIVE )
                     put_data_to_lcd_buffer(&menu0_line1, 14, 1, 3, DISP_FRONTBUFFER, 1);
         } else
         if ( menu_state == MENU_STATE_SETTINGS ){
+            last_menu_state = menu_state;
                 if ( actual_character == 48 ){
                     blink_stop();
                     blink_init(3, 6, 9, 3);
@@ -578,7 +612,7 @@ int main(void){
                 } else 
                 if ( actual_character == 41 ){
                     blink_stop();
-                    menu_state = 10;
+                    menu_state = MENU_STATE_SETTINGS_ACTIVE;
                     disp_operation = DISP_STATE_CLEAR;
                     disp_clear_buffer(DISP_FRONTBUFFER);
                 } else
@@ -587,10 +621,11 @@ int main(void){
                     blink_init(1, 3, 14, 3);
                     menu_state = MENU_STATE_SELECT;
                 }
-                if ( menu_state != MENU_STATE_SETTINGS && menu_state != 10 )
+                if ( menu_state != MENU_STATE_SETTINGS && menu_state != MENU_STATE_SETTINGS_ACTIVE )
                     put_data_to_lcd_buffer(&menu0_line2, 8, 2, 6, DISP_FRONTBUFFER, 1);
         } else
         if ( menu_state == MENU_STATE_PWROFF ){
+            last_menu_state = menu_state;
                 if ( actual_character == 48 ){
                     blink_stop();
                     blink_init(0, 7, 5, 3);
@@ -598,17 +633,72 @@ int main(void){
                 } else 
                 if ( actual_character == 41 ){
                     blink_stop();
-                    menu_state = 10;
+                    menu_state = MENU_STATE_PWROFF_ACTIVE;
                     disp_operation = DISP_STATE_CLEAR;
                     disp_clear_buffer(DISP_FRONTBUFFER);
+                    PIN_clear(PORTA, PA1);
                 } else
                 if (  actual_character == 34 ){
                     blink_stop();
                     blink_init(2, 6, 8, 3);
                     menu_state = MENU_STATE_SETTINGS;
                 }
-                if ( menu_state != MENU_STATE_PWROFF && menu_state != 10 )
+                if ( menu_state != MENU_STATE_PWROFF && menu_state != MENU_STATE_PWROFF_ACTIVE )
                     put_data_to_lcd_buffer(&menu0_line3, 9, 3, 6, DISP_FRONTBUFFER, 1);
+        } else
+        if ( menu_state == MENU_STATE_START_ACTIVE ){
+            last_menu_state = MENU_STATE_DRIVE;
+            
+            if ( stage1_state == STAGE_STATE_WAIT ){
+                if ( PIN_is_low(PINA, PA4) )
+                    stage1_state = STAGE_STATE_IN;
+            } else
+            if ( stage1_state == STAGE_STATE_IN ){
+                if ( --stage1_in_wait == 0 ){
+                    stage1_in_wait = 50;
+                    stage1_state = STAGE_STATE_MEASURE;
+                }
+            } else
+            if ( stage1_state == STAGE_STATE_MEASURE ){
+                compbuff_PWM0 = 65;
+                stage1_state = STAGE_STATE_OUT;
+            } else
+            if ( stage1_state == STAGE_STATE_OUT ) {
+                if ( stage3_state == STAGE_STATE_WAIT )
+                    if ( --stage1_out_wait == 0 ){
+                        stage1_out_wait = 50;
+                        stage1_state = STAGE_STATE_WAIT;
+                        compbuff_PWM0 = 53;
+                    }
+            }
+
+            if ( stage3_state == STAGE_STATE_WAIT ){
+                if ( PIN_is_low(PINA, PA6) )
+                    stage3_state = STAGE_STATE_IN;
+            } else
+            if ( stage3_state == STAGE_STATE_IN ){
+                if ( --stage3_in_wait == 0 ){
+                    stage3_in_wait = 50;
+                    stage3_state = STAGE_STATE_MEASURE;
+                }
+            } else
+            if ( stage3_state == STAGE_STATE_MEASURE ){
+                compbuff_PWM2 = 68;
+                stage3_state = STAGE_STATE_OUT;
+            } else
+            if ( stage3_state == STAGE_STATE_OUT ) {
+                if ( --stage3_out_wait == 0 ){
+                    stage3_out_wait = 50;
+                    stage3_state = STAGE_STATE_WAIT;
+                    compbuff_PWM2 = 56;
+                }
+            }
+
+
+            sprintf(val, "metal = %05d", metal_sense_value);
+            put_data_to_lcd_buffer(val, 13, 1, 0, DISP_FRONTBUFFER, 0);
+            sprintf(val, "color = %05d", color_sense_value);
+            put_data_to_lcd_buffer(val, 13, 2, 0, DISP_FRONTBUFFER, 0);
         }
     }
 }
