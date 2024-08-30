@@ -4,7 +4,7 @@
 // System interrupt (every 0.625us)
 ISR(TIMER2_COMP_vect){
     static uint8_t selected_adc_channel = metal_sense_adc;
-
+    static uint8_t selected_digit = 0;
     if ( ADCSRA & ( 1 << ADIF ) ) {         // ADC conversion complete flag
         if ( adc_hold ) {
             if ( adc_hold > 3 ) {       // wait with starting new conversion for ca. 6 ms after changing mux
@@ -40,6 +40,30 @@ ISR(TIMER2_COMP_vect){
     //if ( system_counter % 256 == 0 && system_counter != 0 ){
     //    USART_text("Interrupt! (256 * 0.625ms = 160ms)\n\r");
     //}
+
+    // Saved for later
+    // if (system_counter % 16 == 0 && system_counter != 0){
+    //     if ( actual_func_key == 'D' && last_func_key == 'D' ){
+    //         selected_digit = 1;
+    //     }
+
+    //     if ( selected_digit > 0 ){
+    //         if ( actual_num_key != last_num_key && actual_num_key != '-' ){
+    //             val_pwm0 = val_pwm0 * 10 + ( actual_num_key - '0' );
+    //             selected_digit++;
+    //         }
+    //         if ( selected_digit > 4 ){
+    //             val_pwm0 = 0;
+    //             selected_digit = 1;
+    //         }
+    //     }
+
+    //     if ( actual_func_key == 'A' && last_func_key == 'A' && selected_digit > 0 ){
+    //         compbuff_PWM0 = val_pwm0;
+    //         val_pwm0 = 0;
+    //         selected_digit = 0;
+    //     }
+    // }
 
     // correction available
     // 2^16 = 65536 when 2^16 / 3200 = 20.48, which means that every counter reload lacks 1664 ticks
@@ -220,51 +244,6 @@ ISR(TIMER0_COMP_vect){
 
 ISR(BADISR_vect){}
 
-unsigned char get_keypad_character( void ){
-    if ( key_code == 0 )
-        return 0;
-
-    uint8_t temp = key_code & 0x1F;
-
-    if ( temp < 8 ){
-        if ( temp == 1 )
-            return '1';
-        if ( temp == 2 )
-            return '2';
-        if ( temp == 4 )
-            return '3';
-    }
-
-    if ( temp < 15 ){
-        if ( temp == 8 )
-            return '4';
-        if ( temp == 9 )
-            return '5';
-        if ( temp == 11 )
-            return '6';
-    }
-
-    if ( temp < 22 ){
-        if ( temp == 15 )
-            return '7';
-        if ( temp == 16 )
-            return '8';
-        if ( temp == 18 )
-            return '9';
-    }
-
-    if ( temp < 25 ){
-        if ( temp == 22 )
-            return '*';
-        if ( temp == 23 )
-            return '0';
-        if ( temp == 25 )
-            return '#';
-    }
-
-    return '-';
-}
-
 void put_line_to_lcd_buffer(unsigned char* text, uint8_t buffer, uint8_t row, uint8_t from_flash){
     put_data_to_lcd_buffer(text, 20, 0, row, buffer, from_flash);
 }
@@ -360,7 +339,7 @@ void lcd_init(void){
     lcd_write_nibble('O');
     lcd_write_nibble('K' >> 4);
     lcd_write_nibble('K');
-    wait_ms(120);
+    wait_ms(80);
 }
 
 uint8_t blink_init(uint8_t row, uint8_t col, uint8_t length, uint8_t period){
@@ -445,7 +424,7 @@ void setup(void){
     // Software PWM timer (50Hz)
     // 50 Hz with 8bit resolution => update every 20ms and 256 samples => update every 155 us
     TCCR0 = ( 1 << WGM01 ) | ( 1 << CS01 );                     // Timer0 in CTC mode, clk/8 = 6444.8Hz
-    OCR0 = 50;//143;
+    OCR0 = 143;
 
     // System timer
     TCCR2 = ( 1 << WGM21 ) | ( 1 << CS21 ) | ( 1 << CS20);     // Timer2 in CTC mode, clk/32
@@ -457,9 +436,12 @@ void setup(void){
     // Disable analog comparator
     ACSR = (1 << ACD);
 
-    compare_PWM0 = 0;
-    compare_PWM1 = 0;
-    compare_PWM2 = 0;
+    compare_PWM0 = 0x00;
+    compbuff_PWM0 = 0x00;
+    compare_PWM1 = 0x30;
+    compbuff_PWM1 = 0x30;
+    compare_PWM2 = 0xAA;
+    compbuff_PWM2 = 0xAA;
 
     lcd_init();
     sei();
@@ -481,23 +463,16 @@ int main(void){
     PIN_clear(WHITE_LED_port, WHITE_LED_pin);
 
     // Quick servos test
-    compbuff_PWM0 = 16;     // leftmost position
-    compbuff_PWM1 = 0;
-    compbuff_PWM2 = 16;
-    
-    wait_ms(300);
+    compbuff_PWM0 = 6;
+    compbuff_PWM1 = 6;
+    compbuff_PWM2 = 6;
 
-    compbuff_PWM0 = 92;     // rightmost position
-    compbuff_PWM1 = 0;
-    compbuff_PWM2 = 92;
-
-    wait_ms(300);
+    wait_ms(1200);
 
     // Move to default position
-    compbuff_PWM0 = 53;
-    compbuff_PWM1 = 0;
-    compbuff_PWM2 = 56;
-    
+    compbuff_PWM0 = 19;
+    compbuff_PWM1 = 19;
+    compbuff_PWM2 = 19;
 
     // Turn off the LEDs
     PIN_set(RED_LED_port, RED_LED_pin);
@@ -509,66 +484,104 @@ int main(void){
     disp_clear_buffer(DISP_FRONTBUFFER);
 
     uint8_t actual_character = 0;
-    uint8_t selected_digit = 0;
-
-    uint8_t color = 0, wait = 0;
     
     for(;;){
-        wait_ms(100);
+        wait_ms(5);
 
-        if ( ++wait > 2 ){
-            if ( key_code == 96 ) {
-                if ( color == 0 ){
-                    PIN_clear(RED_LED_port, RED_LED_pin);
-                    PIN_set(BLUE_LED_port, BLUE_LED_pin);
-                    color = 1;
-                    wait = 0;
-                } else if ( color == 1 ){
-                    PIN_clear(GREEN_LED_port, GREEN_LED_pin);
-                    PIN_set(RED_LED_port, RED_LED_pin);
-                    color = 2;
-                    wait = 0;
-                } else {
-                    PIN_clear(BLUE_LED_port, BLUE_LED_pin);
-                    PIN_set(GREEN_LED_port, GREEN_LED_pin);
-                    color = 0;
-                    wait = 0;
+        // unsigned char val[10];
+        // sprintf(val, "%003d", key_code);
+        // put_data_to_lcd_buffer(val, 3, 0, 0, DISP_FRONTBUFFER, 0);
+
+        actual_character = read_keypad();
+
+        if ( menu_state == MENU_STATE_MAIN ){
+            put_data_to_lcd_buffer(&menu0_line0_start, 5, 0, 7, DISP_FRONTBUFFER, 1);
+            put_data_to_lcd_buffer(&menu0_line1, 14, 1, 3, DISP_FRONTBUFFER, 1);
+            put_data_to_lcd_buffer(&menu0_line2, 8, 2, 6, DISP_FRONTBUFFER, 1);
+            put_data_to_lcd_buffer(&menu0_line3, 9, 3, 6, DISP_FRONTBUFFER, 1);
+
+            blink_init(0, 7, 5, 3);     // period = 640ms
+            menu_state = MENU_STATE_START;
+        }
+        if ( menu_state == MENU_STATE_START ){
+                if ( actual_character == 48 ){
+                    blink_stop();
+                    blink_init(1, 3, 14, 3);
+                    menu_state = MENU_STATE_SELECT;
+                } else 
+                if ( actual_character == 41 ){
+                    blink_stop();
+                    menu_state = 10;
+                    disp_operation = DISP_STATE_CLEAR;
+                    disp_clear_buffer(DISP_FRONTBUFFER);
+                } else
+                if (  actual_character == 34 ){
+                    blink_stop();
+                    blink_init(3, 6, 9, 3);
+                    menu_state = MENU_STATE_PWROFF;
                 }
-            }
+                if ( menu_state != MENU_STATE_START && menu_state != 10 )
+                    put_data_to_lcd_buffer(&menu0_line0_start, 5, 0, 7, DISP_FRONTBUFFER, 1);
+        } else
+        if ( menu_state == MENU_STATE_SELECT ){
+                if ( actual_character == 48 ){
+                    blink_stop();
+                    blink_init(2, 6, 8, 3);
+                    menu_state = MENU_STATE_SETTINGS;
+                } else 
+                if ( actual_character == 41 ){
+                    blink_stop();
+                    menu_state = 10;
+                    disp_operation = DISP_STATE_CLEAR;
+                    disp_clear_buffer(DISP_FRONTBUFFER);
+                } else
+                if (  actual_character == 34 ){
+                    blink_stop();
+                    blink_init(0, 7, 5, 3);
+                    menu_state = MENU_STATE_START;
+                }
+                if ( menu_state != MENU_STATE_SELECT && menu_state != 10 )
+                    put_data_to_lcd_buffer(&menu0_line1, 14, 1, 3, DISP_FRONTBUFFER, 1);
+        } else
+        if ( menu_state == MENU_STATE_SETTINGS ){
+                if ( actual_character == 48 ){
+                    blink_stop();
+                    blink_init(3, 6, 9, 3);
+                    menu_state = MENU_STATE_PWROFF;
+                } else 
+                if ( actual_character == 41 ){
+                    blink_stop();
+                    menu_state = 10;
+                    disp_operation = DISP_STATE_CLEAR;
+                    disp_clear_buffer(DISP_FRONTBUFFER);
+                } else
+                if (  actual_character == 34 ){
+                    blink_stop();
+                    blink_init(1, 3, 14, 3);
+                    menu_state = MENU_STATE_SELECT;
+                }
+                if ( menu_state != MENU_STATE_SETTINGS && menu_state != 10 )
+                    put_data_to_lcd_buffer(&menu0_line2, 8, 2, 6, DISP_FRONTBUFFER, 1);
+        } else
+        if ( menu_state == MENU_STATE_PWROFF ){
+                if ( actual_character == 48 ){
+                    blink_stop();
+                    blink_init(0, 7, 5, 3);
+                    menu_state = MENU_STATE_START;
+                } else 
+                if ( actual_character == 41 ){
+                    blink_stop();
+                    menu_state = 10;
+                    disp_operation = DISP_STATE_CLEAR;
+                    disp_clear_buffer(DISP_FRONTBUFFER);
+                } else
+                if (  actual_character == 34 ){
+                    blink_stop();
+                    blink_init(2, 6, 8, 3);
+                    menu_state = MENU_STATE_SETTINGS;
+                }
+                if ( menu_state != MENU_STATE_PWROFF && menu_state != 10 )
+                    put_data_to_lcd_buffer(&menu0_line3, 9, 3, 6, DISP_FRONTBUFFER, 1);
         }
-
-
-        if ( selected_digit > 0 ){
-            if ( key_code != 0 && key_code < 32 ){
-                val_pwm0 = val_pwm0 * 10 + ( get_keypad_character() - '0' );
-                selected_digit++;
-            }
-            if ( selected_digit > 4 ){
-                val_pwm0 = 0;
-                selected_digit = 1;
-            }
-            if ( key_code == 32 ){
-                compbuff_PWM0 = val_pwm0;
-                compbuff_PWM1 = val_pwm0;
-                compbuff_PWM2 = val_pwm0;
-                val_pwm0 = 0;
-                selected_digit = 0;
-            }
-        }
-
-        if ( key_code == 128 ){
-            selected_digit = 1;
-            val_pwm0 = 0;
-        }
-
-        unsigned char val[10];
-        sprintf(val, "%003d", key_code);
-        put_data_to_lcd_buffer(val, 3, 0, 0, DISP_FRONTBUFFER, 0);
-
-        sprintf(val, "val: %3d", val_pwm0);
-        put_data_to_lcd_buffer(val, 8, 2, 0, DISP_FRONTBUFFER, 0);
-
-        sprintf(val, "PWM0: %3d", compbuff_PWM0);
-        put_data_to_lcd_buffer(val, 9, 3, 0, DISP_FRONTBUFFER, 0);
     }
 }
