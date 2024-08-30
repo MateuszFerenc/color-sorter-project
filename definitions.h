@@ -159,6 +159,7 @@ uint8_t disp_swap_buffers(void);
 uint8_t blink_init(uint8_t row, uint8_t col, uint8_t length, uint8_t period);
 void blink_stop( void );
 uint8_t read_keypad( void );
+unsigned char get_keypad_character( void );
 
 // Functions definitions endl
 
@@ -171,7 +172,7 @@ uint8_t lcdColumns, lcdRows, currentCol, currentRow, lcdRowStart[4];
 
 uint8_t compare_PWM0, compare_PWM1, compare_PWM2;
 volatile uint8_t compbuff_PWM0, compbuff_PWM1, compbuff_PWM2;
-uint8_t key_code = 0;           // 0 - no key pressed
+uint8_t key_code = 0;           // 0 - no key pressed, function keys - A = 32, B = 64, C = 96, D = 128, other characters 1:31, 0 = 23, 1 = 1, 2 = 2, 3 = 4, 4 = 8, 5 = 9, 6 = 11, 7 = 15, 8 = 16, 9 = 18, * = 22, # = 25 
 
 unsigned char disp_linear_buff[160];
 
