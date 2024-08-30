@@ -70,14 +70,17 @@
 
 #define MENU_STATE_MAIN         0
 #define MENU_STATE_START        1
-#define MENU_STATE_STOP         2
+//#define MENU_STATE_STOP         2
 #define MENU_STATE_SELECT       3
-#define MENU_STATE_SETTINGS     4
+#define MENU_STATE_CONFIG       4
 #define MENU_STATE_PWROFF       5
 #define MENU_STATE_START_ACTIVE         6
 #define MENU_STATE_SELECT_ACTIVE        7
-#define MENU_STATE_SETTINGS_ACTIVE      8
+#define MENU_STATE_CONFIG_ACTIVE      8
 #define MENU_STATE_PWROFF_ACTIVE        9
+#define MENU_STATE_CFG_PROGRAM              10
+#define MENU_STATE_CFG_SYSTEM              11
+#define MENU_STATE_CFG_EXIT              12
 #define MENU_STATE_DRIVE                255
 
 #define STAGE_STATE_WAIT                0
@@ -209,8 +212,11 @@ uint8_t selected_object = 0;            // bit 7 - blink state, bits 6:0 - selec
 
 uint8_t blink_position = 0;             // bits 7 - blink state, 6:5 - row, 4:0 - column
 uint8_t blink_conf = 0;                 // bits 7:4 - period [0 - off, 1-15], 3:0 - length [1-16 characters]
+
 // period = 0.625ms * ( 2 ^ ( 7 + blink_conf[7:4] ) )
 unsigned char blink_buffer[16];
+
+uint8_t sorting_state = 0;      // bits 7:4 - error code, 3:0 - sorting stage info
 //  Variables end
 
 //  Constans start
@@ -223,6 +229,17 @@ const unsigned char keypad_func_keys[5] PROGMEM = "-ABCD";
 const unsigned char menu0_line0_start[5] PROGMEM = "START";
 const unsigned char menu0_line0_stop[4] PROGMEM = "STOP";
 const unsigned char menu0_line1[14] PROGMEM = "select program";
-const unsigned char menu0_line2[8] PROGMEM = "settings";
+const unsigned char menu0_line2[9] PROGMEM = "configure";
 const unsigned char menu0_line3[9] PROGMEM = "power off";
+
+const unsigned char menu2_line0_config[10] PROGMEM = "Configure:";
+const unsigned char menu2_line0[7] PROGMEM = "program";
+const unsigned char menu2_line1[6] PROGMEM = "system";
+const unsigned char menu2_line1_exit[4] PROGMEM = "exit";
+const unsigned char menu2_line2[7] PROGMEM = "Status:";
+const unsigned char menu2_line2_ok[2] PROGMEM = "OK";
+const unsigned char menu2_line2_err[3] PROGMEM = "Err";
+const unsigned char menu2_line2_stopped[7] PROGMEM = "stopped";
+const unsigned char menu2_line2_running[7] PROGMEM = "running";
+const unsigned char menu2_line3[8] PROGMEM = "Runtime:";
 //  Constans end
