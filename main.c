@@ -426,6 +426,48 @@ void wait_us( uint8_t us ){
         _delay_us(1);
 }
 
+void fake_shutdown( void ){
+    disp_operation = DISP_STATE_CLEAR;
+    disp_clear_buffer(DISP_FRONTBUFFER);
+    wait_ms(300);
+    put_data_to_lcd_buffer(&text_goodbye, 10, 2, 5, DISP_FRONTBUFFER, 1);
+    wait_ms(150);
+    blink_init(2, 5, 10, 2);
+    wait_ms(150);
+    compbuff_PWM0 = 53;
+    compbuff_PWM1 = 0;
+    compbuff_PWM2 = 56;
+    wait_ms(350);
+    PIN_clear(PORTA, PA1);
+    ADMUX = 0;
+    ADCSRA = 0;
+    wait_ms(200);
+    blink_stop();
+    disp_operation = DISP_STATE_CLEAR;
+    wait_ms(50);
+    cli();
+    TCCR0 = 0;
+    TCCR2 = 0;
+    
+
+    PORTC &= 0x0F;
+    uint8_t button_hold = 200;
+
+    for(;;) {
+        wait_ms(5);
+
+        if ( ~(PINB >> 4) & 0x0F ){
+            if (--button_hold == 0){
+                wdt_enable(WDTO_15MS);
+                for(;;);
+            }
+        } else {
+            if ( button_hold < 40 )
+                button_hold += 10;
+        }
+    }
+}
+
 void setup(void){
     cli();
     //USART_Init(96);        // UART - 9600 Baudrate
@@ -515,9 +557,18 @@ int main(void){
     uint8_t stage3_state = STAGE_STATE_WAIT;
 
 
-    uint8_t stage1_in_wait = 50, stage1_out_wait = 50, stage1_servo = 0;
-    //uint8_t stage2_in_wait = 2, stage2_out_wait = 2, stage2_servo = 0;
-    uint8_t stage3_in_wait = 50, stage3_out_wait = 50, stage3_servo = 0;
+    uint8_t stage1_in_wait = 50, stage1_measure_hold = 20, stage1_out_wait = 50, stage1_servo = 0;
+    //uint8_t stage2_in_wait = 2, stage2_measure_hold = 100, stage2_out_wait = 2, stage2_servo = 0;
+    uint8_t stage3_in_wait = 50, stage3_measure_hold = 20, stage3_out_wait = 50, stage3_servo = 0;
+
+    uint8_t stage_1_config = 0;
+    uint16_t stage1_level = 0;
+
+    //uint8_t stage2_config = 0;
+    //uint16_t stage2_level = 0;
+
+    uint8_t stage3_config = 0;
+    uint16_t stage3_level = 0;
 
     for(;;){
         wait_ms(5);
@@ -582,8 +633,6 @@ int main(void){
                 blink_init(3, 6, 9, 3);
                 menu_state = MENU_STATE_PWROFF;
             }
-            //if ( menu_state != MENU_STATE_START && menu_state != MENU_STATE_START_ACTIVE )
-            //    put_data_to_lcd_buffer(&menu0_line0_start, 5, 0, 7, DISP_FRONTBUFFER, 1);
         } else
         if ( menu_state == MENU_STATE_SELECT ){
             last_menu_state = MENU_STATE_SELECT;
@@ -604,8 +653,6 @@ int main(void){
                 blink_init(0, 7, 5, 3);
                 menu_state = MENU_STATE_START;
             }
-            //if ( menu_state != MENU_STATE_SELECT && menu_state != MENU_STATE_SELECT_ACTIVE )
-            //    put_data_to_lcd_buffer(&menu0_line1, 14, 1, 3, DISP_FRONTBUFFER, 1);
         } else
         if ( menu_state == MENU_STATE_CONFIG ){
             last_menu_state = MENU_STATE_CONFIG;
@@ -633,8 +680,6 @@ int main(void){
                 blink_init(1, 3, 14, 3);
                 menu_state = MENU_STATE_SELECT;
             }
-            //if ( menu_state != MENU_STATE_CONFIG && menu_state != MENU_STATE_CONFIG_ACTIVE )
-            //    put_data_to_lcd_buffer(&menu0_line2, 9, 2, 6, DISP_FRONTBUFFER, 1);
         } else
         if ( menu_state == MENU_STATE_PWROFF ){
             last_menu_state = MENU_STATE_PWROFF;
@@ -645,18 +690,13 @@ int main(void){
             } else 
             if ( actual_character == 41 ){
                 blink_stop();
-                menu_state = MENU_STATE_PWROFF_ACTIVE;
-                disp_operation = DISP_STATE_CLEAR;
-                disp_clear_buffer(DISP_FRONTBUFFER);
-                PIN_clear(PORTA, PA1);
+                fake_shutdown();
             } else
             if (  actual_character == 34 ){
                 blink_stop();
                 blink_init(2, 6, 9, 3);
                 menu_state = MENU_STATE_CONFIG;
             }
-            //if ( menu_state != MENU_STATE_PWROFF && menu_state != MENU_STATE_PWROFF_ACTIVE )
-            //    put_data_to_lcd_buffer(&menu0_line3, 9, 3, 6, DISP_FRONTBUFFER, 1);
         } else
         if ( menu_state == MENU_STATE_START_ACTIVE ){
             last_menu_state = MENU_STATE_START_ACTIVE;
@@ -676,9 +716,7 @@ int main(void){
                 blink_stop();
                 blink_init(3, 6, 9, 3);
                 menu_state = MENU_STATE_PWROFF;
-            }
-            //if ( menu_state != MENU_STATE_START_ACTIVE )
-            //    put_data_to_lcd_buffer(&menu0_line0_stop, 4, 0, 7, DISP_FRONTBUFFER, 1);       
+            }    
         } else
         if ( menu_state == MENU_STATE_SELECT_ACTIVE ){
             last_menu_state = MENU_STATE_SELECT_ACTIVE;
@@ -781,15 +819,6 @@ int main(void){
                     menu_state = MENU_STATE_CFG_PROGRAM;
                 }
             }
-
-            
-
-            // if ( actual_character == 41 ){
-            //      blink_stop();
-            //      menu_state = MENU_STATE_MAIN;
-            //      put_data_to_lcd_buffer(&menu0_line0_start, 5, 0, 7, DISP_FRONTBUFFER, 1);
-            //      blink_init(0, 5, 4, 3);
-            // }
         }
 
         if ( sorting_state != 0 ){          
@@ -804,17 +833,24 @@ int main(void){
                 }
             } else
             if ( stage1_state == STAGE_STATE_MEASURE ){
-                compbuff_PWM0 = 65;
-                stage1_state = STAGE_STATE_OUT;
+                if ( --stage1_measure_hold == 0 ){
+                    stage1_measure_hold = 20;
+                    stage1_state = STAGE_STATE_OUT;
+                }
             } else
-            if ( stage1_state == STAGE_STATE_OUT ) {
-                if ( stage3_state == STAGE_STATE_WAIT )
-                    if ( --stage1_out_wait == 0 ){
-                        stage1_out_wait = 50;
-                        stage1_state = STAGE_STATE_WAIT;
-                        compbuff_PWM0 = 53;
-                    }
-            }
+            if ( stage1_state == STAGE_STATE_OUT ){
+                if ( stage3_state == STAGE_STATE_WAIT ) {
+                    compbuff_PWM0 = 65;
+                    stage1_state = STAGE_STATE_DEFAULT;
+                }
+            } else
+            if ( stage1_state == STAGE_STATE_DEFAULT ){
+                if ( --stage1_out_wait == 0 ){
+                    stage1_out_wait = 50;
+                    compbuff_PWM0 = 53;   
+                    stage1_state = STAGE_STATE_WAIT; 
+                }
+            } 
 
             if ( stage3_state == STAGE_STATE_WAIT ){
                 if ( PIN_is_low(PINA, PA6) )
@@ -827,14 +863,20 @@ int main(void){
                 }
             } else
             if ( stage3_state == STAGE_STATE_MEASURE ){
-                compbuff_PWM2 = 68;
-                stage3_state = STAGE_STATE_OUT;
+                if ( --stage3_measure_hold == 0 ){
+                    stage3_measure_hold = 20;
+                    stage3_state = STAGE_STATE_OUT;
+                }
             } else
-            if ( stage3_state == STAGE_STATE_OUT ) {
+            if ( stage3_state == STAGE_STATE_OUT ){
+                compbuff_PWM2 = 68;
+                stage3_state = STAGE_STATE_DEFAULT;
+            } else
+            if ( stage3_state == STAGE_STATE_DEFAULT ){
                 if ( --stage3_out_wait == 0 ){
                     stage3_out_wait = 50;
-                    stage3_state = STAGE_STATE_WAIT;
-                    compbuff_PWM2 = 56;
+                    compbuff_PWM2 = 56;   
+                    stage3_state = STAGE_STATE_WAIT; 
                 }
             }
         }

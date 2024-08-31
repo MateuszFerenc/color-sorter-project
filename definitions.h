@@ -8,6 +8,7 @@
 #include <util/delay.h>
 #include <avr/cpufunc.h>
 #include <avr/pgmspace.h>
+#include <avr/wdt.h>
 #include <stdio.h>
 
 // Include section end
@@ -77,7 +78,7 @@
 #define MENU_STATE_START_ACTIVE         6
 #define MENU_STATE_SELECT_ACTIVE        7
 #define MENU_STATE_CONFIG_ACTIVE      8
-#define MENU_STATE_PWROFF_ACTIVE        9
+//#define MENU_STATE_PWROFF_ACTIVE        9
 #define MENU_STATE_CFG_PROGRAM              10
 #define MENU_STATE_CFG_SYSTEM              11
 #define MENU_STATE_CFG_EXIT              12
@@ -87,6 +88,7 @@
 #define STAGE_STATE_IN                  1
 #define STAGE_STATE_MEASURE             2
 #define STAGE_STATE_OUT                 3
+#define STAGE_STATE_DEFAULT             4
 
 // Preprocessor definitions end
 
@@ -180,6 +182,7 @@ uint8_t blink_init(uint8_t row, uint8_t col, uint8_t length, uint8_t period);
 void blink_stop( void );
 uint8_t read_keypad( void );
 unsigned char get_keypad_character( void );
+void fake_shutdown( void );
 
 // Functions definitions endl
 
@@ -242,4 +245,6 @@ const unsigned char menu2_line2_err[3] PROGMEM = "Err";
 const unsigned char menu2_line2_stopped[7] PROGMEM = "stopped";
 const unsigned char menu2_line2_running[7] PROGMEM = "running";
 const unsigned char menu2_line3[8] PROGMEM = "Runtime:";
+
+const unsigned char text_goodbye[10] PROGMEM = "Goodbye :)";
 //  Constans end
