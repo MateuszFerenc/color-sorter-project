@@ -110,7 +110,7 @@ ISR(TIMER0_COMP_vect){
     if ( pwm_counter == compare_PWM1)   pwm_mask &= ~( 1 << PWM1 );
     if ( pwm_counter == compare_PWM2)   pwm_mask &= ~( 1 << PWM2 );
 
-    if ( pwm_counter % 10 == 0 && pwm_counter != 0){       // scan next row every ~1.5ms (refresh rate: 322Hz)
+    if ( pwm_counter % 15 == 0 && pwm_counter != 0){       // OUTDATED: scan next row every ~1.5ms (refresh rate: 322Hz)
         key_col_state[key_scan_row] = ~(PINB >> 4) & 0x0F;
         PORTC |= 0xF0;
         PORTC ^= (1 << (4 + key_scan_row++));
@@ -216,10 +216,6 @@ ISR(TIMER0_COMP_vect){
     }
 }
 
-ISR ( EE_RDY_vect ){
-
-}
-
 ISR ( BADISR_vect ){}
 
 unsigned char get_keypad_character( void ){
@@ -234,15 +230,15 @@ unsigned char get_keypad_character( void ){
     return '-';
 }
 
-void put_data_to_lcd_buffer(unsigned char* data, uint8_t length, uint8_t row, uint8_t col, uint8_t buffer, uint8_t from_flash){
+void put_data_to_lcd_buffer( void * data, uint8_t length, uint8_t row, uint8_t col, uint8_t buffer, uint8_t from_flash){
     unsigned char position = (unsigned char)(buffer + (row * 20) + col);
     for (unsigned char offset = 0; length > 0 ; length--, offset++ ){
         if ( from_flash )
             *( disp_linear_buff + position ) = pgm_read_byte(data + offset);
         else {
-            if ( *data < 32)
+            if ( *(unsigned char *)data < 32)
                 continue;
-            *( disp_linear_buff + position ) = *(data + offset);
+            *( disp_linear_buff + position ) = *((unsigned char *)data + offset);
         }
         position++;
     }
@@ -446,11 +442,23 @@ void print_settings_options( unsigned char buffer ){
 }
 
 void check_eeprom_variables( void ) {
-    if ( EEPROM_variables_config == 0x0F ){
-        //eeprom_write_byte();
+    if ( EEPROM_variables_config == EEP_VAR_RAM2ROM ){
+        if ( eeprom_is_ready() ){
+            if ( EEPROM_variable_count < EEPROM_VARIABLES_COUNT ){
+                eeprom_update_byte( pgm_read_word(&eeprom_variables_pointer_array[EEPROM_variable_count]), (uint8_t) *(uint8_t *) pgm_read_word(&setpoint_variables_pointer_array[EEPROM_variable_count]));
+                EEPROM_variable_count++;
+            } else {
+                EEPROM_variables_config = EEP_VAR_NOP;
+                EEPROM_variable_count = 0;
+            }
+        }
     } else
-    if ( EEPROM_variables_config == 0xF0 ){
-
+    if ( EEPROM_variables_config == EEP_VAR_ROM2RAM ){
+        for (EEPROM_variable_count = 0; EEPROM_variable_count < EEPROM_VARIABLES_COUNT ; EEPROM_variable_count++){
+            * (uint8_t *) pgm_read_word(&setpoint_variables_pointer_array[EEPROM_variable_count]) = eeprom_read_byte( pgm_read_word(&eeprom_variables_pointer_array[EEPROM_variable_count]));
+        }
+        EEPROM_variables_config = EEP_VAR_NOP;
+        EEPROM_variable_count = 0;
     }
 }
 
@@ -470,6 +478,7 @@ void setup( void ){
     ADMUX = ( 1 << REFS0) | (metal_sense_adc & 0x1F);
     ADCSRA = ( 1 << ADEN ) | ( 1 << ADSC ) | (1 << ADPS2 ) | ( 1 << ADPS1 ) | ( 1 << ADPS0 );   // Adc single shot mode, clk/128
 
+    // Values are OUTDATED, frequency increased due to need of servo signal resolution increase
     // Software PWM timer (50Hz)
     // 50 Hz with 8bit resolution => update every 20ms and 256 samples => update every 155 us
     TCCR0 = ( 1 << WGM01 ) | ( 1 << CS01 );                     // Timer0 in CTC mode, clk/8 = 6444.8Hz
@@ -564,7 +573,28 @@ int main( void ){
     PIN_set(BLUE_LED_port, BLUE_LED_pin);
     PIN_set(WHITE_LED_port, WHITE_LED_pin);
 
+    disp_clear_buffer(DISP_FRONTBUFFER);
+
+    put_data_to_lcd_buffer(&dev0_name, 14, 0, 0, DISP_FRONTBUFFER, 1);
+    put_data_to_lcd_buffer(&dev1_name, 15, 1, 0, DISP_FRONTBUFFER, 1);
+    put_data_to_lcd_buffer(&dev2_name, 13, 2, 0, DISP_FRONTBUFFER, 1);
+
+    wait_ms(750);
+
     unsigned char val[20];
+
+    EEPROM_variables_config = EEP_VAR_ROM2RAM;
+
+    // check_eeprom_variables();
+    // disp_clear_buffer(DISP_FRONTBUFFER);
+
+    // sprintf(val, "%03u, %03u, %03u, %03u", S_stage1_servo_accept, S_stage1_servo_default, S_stage1_servo_reject, S_stage3_color_switch_hold);
+    // put_data_to_lcd_buffer(val, 18, 0, 0, DISP_FRONTBUFFER, 0);
+
+    // sprintf(val, "%03u, %03u, %03u", S_stage3_in_wait, S_stage3_measure_hold, S_stage3_out_wait);
+    // put_data_to_lcd_buffer(val, 13, 1, 0, DISP_FRONTBUFFER, 0);
+
+    // wait_ms(500);
 
     for(;;){
         check_eeprom_variables();
@@ -921,14 +951,20 @@ int main( void ){
             }
         }
 
-        if ( sorting_state != 0 ){          
+        if ( sorting_state != 0 ){    
+            // sprintf(val, "%03u", stage3_in_wait);
+            // put_data_to_lcd_buffer(val, 3, 3, 0, DISP_FRONTBUFFER, 0);      
+            // sprintf(val, "%03u", stage3_color_switch_hold);
+            // put_data_to_lcd_buffer(val, 3, 3, 17, DISP_FRONTBUFFER, 0); 
             if ( stage1_state == STAGE_STATE_WAIT ){
-                if ( PIN_is_low(PINA, PA4) )
+                if ( PIN_is_low(PINA, PA4) ) {
+                    stage1_in_wait = S_stage1_in_wait;
                     stage1_state = STAGE_STATE_IN;
+                }
             } else
             if ( stage1_state == STAGE_STATE_IN ){
                 if ( --stage1_in_wait == 0 ){
-                    stage1_in_wait = 50;
+                    stage1_measure_hold = S_stage1_measure_hold;
                     stage1_state = STAGE_STATE_MEASURE;
                 }
             } else
@@ -937,7 +973,7 @@ int main( void ){
                     adc_read_count = 0;
                 }
                 if ( --stage1_measure_hold == 0 ){
-                    stage1_measure_hold = 20;
+                    stage1_out_wait = S_stage1_out_wait;
                     stage1_state = STAGE_STATE_OUT;
                 }
             } else
@@ -949,19 +985,21 @@ int main( void ){
             } else
             if ( stage1_state == STAGE_STATE_DEFAULT ){
                 if ( --stage1_out_wait == 0 ){
-                    stage1_out_wait = 30;
-                    compbuff_PWM0 = 53;   
+                    compbuff_PWM0 = S_stage1_servo_default;   
                     stage1_state = STAGE_STATE_WAIT; 
                 }
             } 
 
             if ( stage3_state == STAGE_STATE_WAIT ){
-                if ( PIN_is_low(PINA, PA6) )
+                if ( PIN_is_low(PINA, PA6) ) {
+                    stage3_in_wait = S_stage3_in_wait;
                     stage3_state = STAGE_STATE_IN;
+                }
             } else
             if ( stage3_state == STAGE_STATE_IN ){
                 if ( --stage3_in_wait == 0 ){
-                    stage3_in_wait = 30;
+                    stage3_color_switch_hold = S_stage3_color_switch_hold;
+                    stage3_measure_hold = S_stage3_measure_hold;
                     stage3_state = STAGE_STATE_MEASURE;
                     PIN_clear(RED_LED_port, RED_LED_pin);
                     stage3_config &= 0xF3;
@@ -995,11 +1033,11 @@ int main( void ){
                         adc_read_count = 0;
                         blue_value = color_sense_value / 10;
                     }
-                    stage3_color_switch_hold = 30;
+                    stage3_color_switch_hold = S_stage3_color_switch_hold;
                 }
 
                 if ( --stage3_measure_hold == 0 ){
-                    stage3_measure_hold = 90;
+                    stage3_out_wait = S_stage3_out_wait;
                     stage3_state = STAGE_STATE_OUT;
                     PIN_set(RED_LED_port, RED_LED_pin);
                     PIN_set(GREEN_LED_port, GREEN_LED_pin);
@@ -1013,8 +1051,7 @@ int main( void ){
             } else
             if ( stage3_state == STAGE_STATE_DEFAULT ){
                 if ( --stage3_out_wait == 0 ){
-                    stage3_out_wait = 30;
-                    compbuff_PWM2 = 56;   
+                    compbuff_PWM2 = S_stage3_servo_default;   
                     stage3_state = STAGE_STATE_WAIT; 
                 }
             }

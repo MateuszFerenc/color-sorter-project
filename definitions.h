@@ -1,4 +1,4 @@
-//#define __AVR_ATmega16__
+#define __AVR_ATmega16__
 #define F_CPU 14745600UL
 
 // Include section start
@@ -94,11 +94,17 @@
 #define MENU_STATE_DRAW_C_PROG                  23
 #define MENU_STATE_DRIVE                255
 
-#define STAGE_STATE_WAIT                0
-#define STAGE_STATE_IN                  1
-#define STAGE_STATE_MEASURE             2
-#define STAGE_STATE_OUT                 3
-#define STAGE_STATE_DEFAULT             4
+#define STAGE_STATE_WAIT                (uint8_t) 0
+#define STAGE_STATE_IN                  (uint8_t) 1
+#define STAGE_STATE_MEASURE             (uint8_t) 2
+#define STAGE_STATE_OUT                 (uint8_t) 3
+#define STAGE_STATE_DEFAULT             (uint8_t) 4
+
+#define EEP_VAR_NOP                     (uint8_t) 0x00
+#define EEP_VAR_ROM2RAM                 (uint8_t) 0xF0
+#define EEP_VAR_RAM2ROM                 (uint8_t) 0x0F
+
+#define EEPROM_VARIABLES_COUNT          (uint8_t) 13
 
 // Preprocessor definitions end
 
@@ -185,7 +191,7 @@ void lcd_command( uint8_t command );
 void lcd_write_nibble( uint8_t data );
 void lcd_init( void );
 // TODO change defined pointer to void pointer
-void put_data_to_lcd_buffer(unsigned char* data, uint8_t length, uint8_t row, uint8_t col, uint8_t buffer, uint8_t from_flash);
+void put_data_to_lcd_buffer(void * data, uint8_t length, uint8_t row, uint8_t col, uint8_t buffer, uint8_t from_flash);
 void put_one_char(unsigned char character, uint8_t length, uint8_t row, uint8_t col, uint8_t buffer);
 void disp_clear_buffer(uint8_t buffer);
 uint8_t disp_swap_buffers(void);
@@ -232,7 +238,7 @@ unsigned char blink_buffer[16];
 
 uint8_t sorting_state = 0;      // bits 7:4 - error code, 3:0 - sorting stage info
 
-uint8_t EEPROM_variables_config = 0;    // 0xF0 : ROM -> RAM, 0x0F : RAM -> ROM
+uint8_t EEPROM_variables_config = EEP_VAR_NOP;    // 0xF0 : ROM -> RAM, 0x0F : RAM -> ROM
 uint8_t EEPROM_variable_count = 0;
 
 
@@ -271,18 +277,34 @@ static EEMEM uint8_t E_stage3_in_wait = 30, E_stage3_measure_hold = 90, E_stage3
 // EEPROM data region end
 
 
-//  Constans start
+//  Constants start
 
 // TODO optimize this
 
-const uint8_t * const epprom_variables_pointer_array [13] PROGMEM = { &E_stage1_servo_accept, &E_stage1_servo_default, &E_stage1_servo_reject, 
-                                                &E_stage3_servo_accept, &E_stage3_servo_default, &E_stage3_servo_reject,
-                                                &E_stage1_in_wait, &E_stage1_measure_hold, &E_stage1_out_wait,
-                                                &E_stage3_in_wait, &E_stage3_measure_hold, &E_stage3_out_wait,
-                                                &E_stage3_color_switch_hold
-                                                //  &E_stage2_servo_accept, &E_stage2_servo_default, &E_stage2_servo_reject,
-                                                //  &E_stage2_in_wait, &E_stage2_measure_hold, &E_stage2_out_wait, 
-                                                };
+//const uint8_t * const eeprom_variables_pointer_array [ EEPROM_VARIABLES_COUNT ] PROGMEM = { 
+const uint8_t * const eeprom_variables_pointer_array [ EEPROM_VARIABLES_COUNT ] PROGMEM = { 
+    &E_stage1_servo_accept, &E_stage1_servo_default, &E_stage1_servo_reject, 
+    &E_stage3_servo_accept, &E_stage3_servo_default, &E_stage3_servo_reject,
+    &E_stage1_in_wait, &E_stage1_measure_hold, &E_stage1_out_wait,
+    &E_stage3_in_wait, &E_stage3_measure_hold, &E_stage3_out_wait,
+    &E_stage3_color_switch_hold
+    //  &E_stage2_servo_accept, &E_stage2_servo_default, &E_stage2_servo_reject,
+    //  &E_stage2_in_wait, &E_stage2_measure_hold, &E_stage2_out_wait, 
+};
+
+const uint8_t * const setpoint_variables_pointer_array [ EEPROM_VARIABLES_COUNT ] PROGMEM = {
+//uint8_t * setpoint_variables_pointer_array [ EEPROM_VARIABLES_COUNT ] = {
+    &S_stage1_servo_accept, &S_stage1_servo_default, &S_stage1_servo_reject,
+    //   &stage2_servo_accept, &stage2_servo_default, &stage2_servo_reject,
+    &S_stage3_servo_accept, &S_stage3_servo_default, &S_stage3_servo_reject,
+    &S_stage1_in_wait, &S_stage1_measure_hold, &S_stage1_out_wait,
+    //  &stage2_in_wait, &stage2_measure_hold, &stage2_out_wait,
+    &S_stage3_in_wait, &S_stage3_measure_hold, &S_stage3_out_wait, &S_stage3_color_switch_hold
+};
+
+const unsigned char dev0_name[14] PROGMEM = "Mateusz Ferenc";
+const unsigned char dev1_name[15] PROGMEM = "Ola Bejgerowska";
+const unsigned char dev2_name[13] PROGMEM = "Adam Bartczak";
 
 const unsigned char keypad_num0_keys[5] PROGMEM = "-12-3";
 const unsigned char keypad_num1_keys[5] PROGMEM = "-45-6";

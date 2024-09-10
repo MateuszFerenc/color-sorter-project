@@ -1,7 +1,7 @@
 BIN=main
 OBJS=main.o
 
-DEVICE=atmega16
+DEVICE=atmega16a
 SPEED=14745600UL
 
 OBJCOPY=avr-objcopy
