@@ -130,6 +130,9 @@
 #define KEYPAD_ALT_RIGHT                KEYPAD_KEY_A + KEYPAD_KEY_6
 #define KEYPAD_ALT_SELECT               KEYPAD_KEY_A + KEYPAD_KEY_5
 
+#define EEP_PRG_SIZE                    17
+#define EEP_PRG_AMOUNT                  20
+
 // Preprocessor definitions end
 
 /* J1 - Metal stage
@@ -213,7 +216,7 @@ void wait_ms( uint16_t ms );
 void wait_us( uint8_t us );
 void lcd_command( uint8_t command );
 void lcd_write_nibble( uint8_t data );
-void lcd_init( void );
+static void lcd_init( void );
 // TODO change defined pointer to void pointer
 void put_data_to_lcd_buffer(void * data, uint8_t length, uint8_t row, uint8_t col, uint8_t buffer, uint8_t from_flash);
 void put_one_char(unsigned char character, uint8_t length, uint8_t row, uint8_t col, uint8_t buffer);
@@ -223,7 +226,7 @@ uint8_t blink_init(uint8_t row, uint8_t col, uint8_t length, uint8_t period);
 void blink_stop( void );
 uint8_t read_keypad( void );
 unsigned char get_keypad_character( void );
-void fake_shutdown( void );
+static void fake_shutdown( void );
 void print_settings_options( unsigned char buffer );
 void check_eeprom_variables( void );
 void display_parameters( uint8_t max_amount, uint8_t offset, uint8_t max_offset, void * names_ptr, void * values_ptr, uint8_t names_len, uint8_t values_len, uint8_t values_pos);
@@ -286,6 +289,8 @@ uint8_t S_stage3_color_switch_hold; // 3:2 [ 0 - no color, 01 - red, 10 - green,
 
 uint8_t parameter_disp_config = 0;   // bit 7 - display [ 0 - ready to display, 1 - already displayed, waiting for refresh], bits 6:0 - starting offset of parameter [0 - 127]
 
+uint8_t program_id = 0, program_name[6] = "TEST", program_stage1_conf = 0, program_stage3_conf = 5, program_stage1_val[2] = {0x02, 0x58}, program_stage3_red[2] = {0x03, 20}, program_stage3_grn[2] = { 0, 0}, program_stage3_blu[2] = { 0, 0};
+
 //  Variables end
 
 
@@ -300,14 +305,18 @@ static EEMEM uint8_t E_stage1_in_wait = 50, E_stage1_measure_hold = 20, E_stage1
 //uint8_t EEMEM E_stage2_in_wait = 2, E_stage2_measure_hold = 100, E_stage2_out_wait = 2;
 static EEMEM uint8_t E_stage3_in_wait = 30, E_stage3_measure_hold = 90, E_stage3_out_wait = 30, E_stage3_color_switch_hold = 30;
 
+static EEMEM uint8_t program_content_array[ EEP_PRG_AMOUNT * EEP_PRG_SIZE ] = { 0, 'T', 'E', 'S', 'T', ' ', ' ', 0, 1, 0, 0, 0x3, 0x20, 0, 0, 0, 0};
+// test program [id: 0, name: TEST, stage1_conf: 0 (accept all), stage2_conf: 1 (accept greater), stage1_val: 0, stage3_val_red: 800dec (320hex), stage3_val_grn: 0, stage3_val_blu: 0]
+
 // EEPROM data region end
 
 
 //  Constants start
 
-// TODO optimize this
+const uint8_t * const program_parameters_array [ 8 ] PROGMEM = {
+    &program_id, &program_name, &program_stage1_conf, &program_stage3_conf, &program_stage1_val, &program_stage3_red, &program_stage3_grn, &program_stage3_blu
+};
 
-//const uint8_t * const eeprom_variables_pointer_array [ EEPROM_VARIABLES_COUNT ] PROGMEM = { 
 const uint8_t * const eeprom_variables_pointer_array [ EEPROM_VARIABLES_COUNT ] PROGMEM = { 
     &E_stage1_servo_accept, &E_stage1_servo_default, &E_stage1_servo_reject, 
     &E_stage3_servo_accept, &E_stage3_servo_default, &E_stage3_servo_reject,
@@ -319,7 +328,6 @@ const uint8_t * const eeprom_variables_pointer_array [ EEPROM_VARIABLES_COUNT ] 
 };
 
 const uint8_t * const setpoint_variables_pointer_array [ EEPROM_VARIABLES_COUNT ] PROGMEM = {
-//uint8_t * setpoint_variables_pointer_array [ EEPROM_VARIABLES_COUNT ] = {
     &S_stage1_servo_accept, &S_stage1_servo_default, &S_stage1_servo_reject,
     //   &stage2_servo_accept, &stage2_servo_default, &stage2_servo_reject,
     &S_stage3_servo_accept, &S_stage3_servo_default, &S_stage3_servo_reject,

@@ -293,7 +293,7 @@ void lcd_write_nibble(uint8_t data){
     wait_us(200);
 }
 
-void lcd_init(void){
+static void lcd_init(void){
     for ( uint8_t enable_4b_mode = 0; enable_4b_mode < 3; enable_4b_mode++){
         lcd_write_nibble(0x03);
         wait_ms(5);
@@ -390,7 +390,7 @@ void wait_us( uint8_t us ){
         _delay_us(1);
 }
 
-void fake_shutdown( void ){
+static void fake_shutdown( void ){
     disp_clear_buffer(DISP_FRONTBUFFER);
     put_data_to_lcd_buffer(&text_goodbye, 10, 2, 5, DISP_FRONTBUFFER, 1);
     wait_ms(150);
@@ -462,20 +462,6 @@ void check_eeprom_variables( void ) {
     }
 }
 
-// uint8_t i = 0, j = 3;
-// if ( EEPROM_VARIABLES_COUNT % parameter_disp_config < 3 ){
-//     j = EEPROM_VARIABLES_COUNT % parameter_disp_config;
-// }
-// for (; i < j; i++){
-//     // Display parameter name
-//     put_data_to_lcd_buffer(&parameter_display_names[(i + parameter_disp_config) * 13], 13, i, 0, DISP_FRONTBUFFER, 1);
-//     // Display ':' separator
-//     put_one_char(':', 1, i, 13, DISP_FRONTBUFFER);
-//     // Convert setpoint value to ASCII
-//     utoa((uint8_t) *(uint8_t *) pgm_read_word(&setpoint_variables_pointer_array[i + parameter_disp_config]), val, 10);
-//     // Display given value
-//     put_data_to_lcd_buffer(val, 3, i, 15, DISP_FRONTBUFFER, 0);
-// }
 
 void display_parameters( uint8_t max_amount, uint8_t offset, uint8_t max_offset, void * names_ptr, void * values_ptr, uint8_t names_len, uint8_t values_len, uint8_t values_pos){
     uint8_t i = 0, j = max_offset;
@@ -496,7 +482,7 @@ void display_parameters( uint8_t max_amount, uint8_t offset, uint8_t max_offset,
     }
 }
 
-void setup( void ){
+static void setup( void ){
     cli();
     //USART_Init(96);        // UART - 9600 Baudrate
     DDRA = 0x82;
@@ -551,16 +537,16 @@ int main( void ){
     //uint8_t stage2_state = STAGE_STATE_WAIT;
     uint8_t stage3_state = STAGE_STATE_WAIT;
 
-    uint8_t stage_1_config = 0;     // bits 1:0 [00 - accept all, 01 - accept greater, 10 - accept less, 11 - reject all]
-    uint16_t stage1_level = 0;
+    uint8_t stage1_config = program_stage1_conf;     // bits 1:0 [00 - accept all, 01 - accept greater, 10 - accept less, 11 - reject all]
+    uint16_t stage1_level = ( program_stage1_val[0] << 8 ) | program_stage1_val[1];
 
     //uint8_t stage2_config = 0;
     //uint16_t stage2_level = 0;
 
-    uint8_t stage3_config = 0;     // bits 1:0 [00 - accept all, 01 - accept greater, 10 - accept less, 11 - reject all]
+    uint8_t stage3_config = program_stage3_conf;     // bits 1:0 [00 - accept all, 01 & 10 - ignore, 11 - reject all], bits pairs 3:2, 5:4, 6:7 rely to Red, Green, Blue [00 & 11 - ignore, 01 - accept greater, 10 - accept less]
     
     
-    uint16_t stage3_level = 0;
+    uint16_t stage3_red_level = ( program_stage3_red[0] << 8 ) | program_stage3_red[1], stage3_green_level = ( program_stage3_grn[0] << 8 ) | program_stage3_grn[1], stage3_blue_level = ( program_stage3_blu[0] << 8 ) | program_stage3_blu[1];
 
     uint16_t red_value = 0, green_value = 0, blue_value = 0;
 
@@ -1021,7 +1007,15 @@ int main( void ){
             } else
             if ( stage1_state == STAGE_STATE_OUT ){
                 if ( stage3_state == STAGE_STATE_WAIT ) {
-                    compbuff_PWM0 = 65;
+                    if ( (stage1_config & 0x03) == 0)
+                        compbuff_PWM0 = S_stage1_servo_accept;
+                    else if ( (stage1_config & 0x03) == 1)
+                        compbuff_PWM0 = (metal_sense_value > stage1_level) ? S_stage1_servo_accept : S_stage1_servo_reject;
+                    else if ( (stage1_config & 0x03) == 2)
+                        compbuff_PWM0 = (metal_sense_value < stage1_level) ? S_stage1_servo_accept : S_stage1_servo_reject;
+                    else
+                        compbuff_PWM0 = S_stage1_servo_reject;
+
                     stage1_state = STAGE_STATE_DEFAULT;
                 }
             } else
@@ -1088,8 +1082,30 @@ int main( void ){
                 }
             } else
             if ( stage3_state == STAGE_STATE_OUT ){
-                compbuff_PWM2 = 68;
+                uint8_t temp = S_stage3_servo_accept, stage_base = stage3_config & 0x03, stage_red = (stage3_config & 0x0C) >> 2, stage_green = (stage3_config & 0x30) >> 4, stage_blue = (stage3_config & 0xC0) >> 6;
+
+                if (stage_base == 1)
+                    if ((stage_red == 1 && red_value < stage3_red_level) || 
+                        (stage_red == 2 && red_value > stage3_red_level) || 
+                        (stage_green == 1 && green_value < stage3_green_level) || 
+                        (stage_green == 2 && green_value > stage3_green_level) || 
+                        (stage_blue == 1 && blue_value < stage3_blue_level) || 
+                        (stage_blue == 2 && blue_value > stage3_blue_level))
+                        temp = S_stage3_servo_reject;
+                else if (stage_base == 2)
+                    temp = S_stage3_servo_reject;
+                    if ((stage_red == 1 && red_value > stage3_red_level) || 
+                        (stage_red == 2 && red_value < stage3_red_level) || 
+                        (stage_green == 1 && green_value > stage3_green_level) || 
+                        (stage_green == 2 && green_value < stage3_green_level) || 
+                        (stage_blue == 1 && blue_value > stage3_blue_level) || 
+                        (stage_blue == 2 && blue_value < stage3_blue_level))
+                        temp = S_stage3_servo_accept;
+                else if (stage_base == 3)
+                    temp = S_stage3_servo_reject;
+                compbuff_PWM2 = temp;
                 stage3_state = STAGE_STATE_DEFAULT;
+                
             } else
             if ( stage3_state == STAGE_STATE_DEFAULT ){
                 if ( --stage3_out_wait == 0 ){
