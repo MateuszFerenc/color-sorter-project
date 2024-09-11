@@ -11,6 +11,7 @@
 #include <avr/wdt.h>
 #include <stdio.h>
 #include <avr/eeprom.h>
+#include <stdlib.h>
 
 // Include section end
 
@@ -105,6 +106,29 @@
 #define EEP_VAR_RAM2ROM                 (uint8_t) 0x0F
 
 #define EEPROM_VARIABLES_COUNT          (uint8_t) 13
+
+#define KEYPAD_KEY_A                    (uint8_t) 32
+#define KEYPAD_KEY_B                    (uint8_t) 64
+#define KEYPAD_KEY_C                    (uint8_t) 96
+#define KEYPAD_KEY_D                    (uint8_t) 128
+#define KEYPAD_KEY_0                    (uint8_t) 23
+#define KEYPAD_KEY_1                    (uint8_t) 1
+#define KEYPAD_KEY_2                    (uint8_t) 2
+#define KEYPAD_KEY_3                    (uint8_t) 4
+#define KEYPAD_KEY_4                    (uint8_t) 8
+#define KEYPAD_KEY_5                    (uint8_t) 9
+#define KEYPAD_KEY_6                    (uint8_t) 11
+#define KEYPAD_KEY_7                    (uint8_t) 15
+#define KEYPAD_KEY_8                    (uint8_t) 16
+#define KEYPAD_KEY_9                    (uint8_t) 18
+#define KEYPAD_KEY_star                 (uint8_t) 22
+#define KEYPAD_KEY_#                    (uint8_t) 25
+
+#define KEYPAD_ALT_UP                   KEYPAD_KEY_A + KEYPAD_KEY_2
+#define KEYPAD_ALT_DOWN                 KEYPAD_KEY_A + KEYPAD_KEY_8
+#define KEYPAD_ALT_LEFT                 KEYPAD_KEY_A + KEYPAD_KEY_4
+#define KEYPAD_ALT_RIGHT                KEYPAD_KEY_A + KEYPAD_KEY_6
+#define KEYPAD_ALT_SELECT               KEYPAD_KEY_A + KEYPAD_KEY_5
 
 // Preprocessor definitions end
 
@@ -202,6 +226,7 @@ unsigned char get_keypad_character( void );
 void fake_shutdown( void );
 void print_settings_options( unsigned char buffer );
 void check_eeprom_variables( void );
+void display_parameters( uint8_t max_amount, uint8_t offset, uint8_t max_offset, void * names_ptr, void * values_ptr, uint8_t names_len, uint8_t values_len, uint8_t values_pos);
 
 // Functions declarations end
 
@@ -219,7 +244,6 @@ uint8_t key_code = 0;           // 0 - no key pressed, function keys - A = 32, B
 
 unsigned char disp_linear_buff[160];
 
-// one properties mem. cell, but I think two will be better, i.e. now need of writing without making buffer dirty
 uint8_t disp_buffers_dirty = 0;        // buffer "dirty" bits, one means buffer updated and ready to display
 // bits: 7-4: disp_linear_buff[79:159] = 7 - 4th line .. 4 - 1st line, 3-0: disp_linear_buff[0:79] = 3 - 4th line .. 0 - 1st line
 
@@ -231,9 +255,8 @@ void *disp_buffer_pointer = NULL;
 uint8_t menu_state = MENU_STATE_DRAW_MAIN, last_menu_state = MENU_STATE_DRAW_MAIN;
 
 uint8_t blink_position = 0;             // bits 7 - blink state, 6:5 - row, 4:0 - column
-uint8_t blink_conf = 0;                 // bits 7:4 - period [0 - off, 1-15], 3:0 - length [1-16 characters]
+uint8_t blink_conf = 0;                 // bits 7:4 - period [0 - off, 1-15], 3:0 - length [1-16 characters], period = 0.625ms * ( 2 ^ ( 7 + blink_conf[7:4] ) )
 
-// period = 0.625ms * ( 2 ^ ( 7 + blink_conf[7:4] ) )
 unsigned char blink_buffer[16];
 
 uint8_t sorting_state = 0;      // bits 7:4 - error code, 3:0 - sorting stage info
@@ -258,7 +281,10 @@ uint8_t S_stage3_servo_accept, S_stage3_servo_default, S_stage3_servo_reject;
 
 uint8_t S_stage1_in_wait, S_stage1_measure_hold, S_stage1_out_wait;
 // uint8_t stage2_in_wait, stage2_measure_hold, stage2_out_wait;
-uint8_t S_stage3_in_wait, S_stage3_measure_hold, S_stage3_out_wait, S_stage3_color_switch_hold;
+uint8_t S_stage3_in_wait, S_stage3_measure_hold, S_stage3_out_wait;
+uint8_t S_stage3_color_switch_hold; // 3:2 [ 0 - no color, 01 - red, 10 - green, 11 - blue ]
+
+uint8_t parameter_disp_config = 0;   // bit 7 - display [ 0 - ready to display, 1 - already displayed, waiting for refresh], bits 6:0 - starting offset of parameter [0 - 127]
 
 //  Variables end
 
@@ -301,10 +327,6 @@ const uint8_t * const setpoint_variables_pointer_array [ EEPROM_VARIABLES_COUNT 
     //  &stage2_in_wait, &stage2_measure_hold, &stage2_out_wait,
     &S_stage3_in_wait, &S_stage3_measure_hold, &S_stage3_out_wait, &S_stage3_color_switch_hold
 };
-
-const unsigned char dev0_name[14] PROGMEM = "Mateusz Ferenc";
-const unsigned char dev1_name[15] PROGMEM = "Ola Bejgerowska";
-const unsigned char dev2_name[13] PROGMEM = "Adam Bartczak";
 
 const unsigned char keypad_num0_keys[5] PROGMEM = "-12-3";
 const unsigned char keypad_num1_keys[5] PROGMEM = "-45-6";
@@ -355,5 +377,24 @@ const unsigned char text_save[4] PROGMEM = "save";
 const unsigned char text_goodbye[10] PROGMEM = "Goodbye :)";
 const unsigned char sorter_version[11] PROGMEM = "Sorter v" TOSTRING(stable_version) "." TOSTRING(beta_version);
 const unsigned char compilation_date[11] PROGMEM = __DATE__;
+const unsigned char dev0_name[14] PROGMEM = "Mateusz Ferenc";
+const unsigned char dev1_name[15] PROGMEM = "Ola Bejgerowska";
+const unsigned char dev2_name[13] PROGMEM = "Adam Bartczak";
+
+// EEPROM_VARIABLES_COUNT * 13, 13 due to one parameter name will be limited to 13 characters
+const unsigned char parameter_display_names[ EEPROM_VARIABLES_COUNT * 13 ] PROGMEM = 
+    "stg1_serv_acc"\
+    "stg1_serv_def"\
+    "stg1_serv_rej"\
+    "stg3_serv_acc"\
+    "stg3_serv_def"\
+    "stg3_serv_rej"\
+    "stg1_in_wait "\
+    "stg1_meas_hld"\
+    "stg1_out_wait"\
+    "stg3_in_wait "\
+    "stg3_meas_hld"\
+    "stg3_out_wait"\
+    "stg3_color_sw";
 
 //  Constans end

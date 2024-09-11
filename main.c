@@ -72,7 +72,7 @@ ISR(TIMER2_COMP_vect){
     }
 
     if ( blink_conf & 0xF0 ){
-        if ( system_counter % (2 << ( 7 + ( blink_conf >> 4)) ) == 0 && system_counter != 0 ){
+        if ( system_counter % (2 << ( 7 + ( blink_conf >> 4)) ) == 0){
             blink_position ^= 0x80;
             if (blink_position & 0x80)
                 put_data_to_lcd_buffer(&blink_buffer, blink_conf & 0x0F, (blink_position >> 5) & 3, blink_position & 0x0F, disp_active_buffer, 0);
@@ -231,15 +231,15 @@ unsigned char get_keypad_character( void ){
 }
 
 void put_data_to_lcd_buffer( void * data, uint8_t length, uint8_t row, uint8_t col, uint8_t buffer, uint8_t from_flash){
-    unsigned char position = (unsigned char)(buffer + (row * 20) + col);
+    unsigned char position = (unsigned char)(buffer + (row * 20) + col), temp;
     for (unsigned char offset = 0; length > 0 ; length--, offset++ ){
         if ( from_flash )
-            *( disp_linear_buff + position ) = pgm_read_byte(data + offset);
-        else {
-            if ( *(unsigned char *)data < 32)
-                continue;
-            *( disp_linear_buff + position ) = *((unsigned char *)data + offset);
-        }
+            temp = pgm_read_byte(data + offset);
+        else
+            temp = *((unsigned char *)data + offset);
+        if ( temp < 32)
+            break;
+        *( disp_linear_buff + position ) = temp;
         position++;
     }
     disp_buffers_dirty |= 1 << ( ( buffer / 20 ) + row );
@@ -419,14 +419,14 @@ void fake_shutdown( void ){
     for(;;) {
         wait_ms(5);
 
-        if ( !(PINB >> 4) & 0x0F ){
+        if ( ~(PINB >> 4) & 0x0F ){
             if (--button_hold == 0){
                 wdt_enable(WDTO_15MS);
                 for(;;);
             }
         } else {
-            if ( button_hold < 40 )
-                button_hold += 10;
+            if ( button_hold < 20 )
+                button_hold += 2;
             else
                 button_hold = 200;
         }
@@ -434,10 +434,10 @@ void fake_shutdown( void ){
 }
 
 void print_settings_options( unsigned char buffer ){
-    put_data_to_lcd_buffer("1.", 2, 3, 2, buffer, 0);
+    put_data_to_lcd_buffer("C.", 2, 3, 2, buffer, 0);
     put_data_to_lcd_buffer(&text_save, 4, 3, 4, buffer, 1);
 
-    put_data_to_lcd_buffer("2.", 2, 3, 10, buffer, 0);
+    put_data_to_lcd_buffer("D.", 2, 3, 10, buffer, 0);
     put_data_to_lcd_buffer(&text_exit, 4, 3, 12, buffer, 1);
 }
 
@@ -459,6 +459,40 @@ void check_eeprom_variables( void ) {
         }
         EEPROM_variables_config = EEP_VAR_NOP;
         EEPROM_variable_count = 0;
+    }
+}
+
+// uint8_t i = 0, j = 3;
+// if ( EEPROM_VARIABLES_COUNT % parameter_disp_config < 3 ){
+//     j = EEPROM_VARIABLES_COUNT % parameter_disp_config;
+// }
+// for (; i < j; i++){
+//     // Display parameter name
+//     put_data_to_lcd_buffer(&parameter_display_names[(i + parameter_disp_config) * 13], 13, i, 0, DISP_FRONTBUFFER, 1);
+//     // Display ':' separator
+//     put_one_char(':', 1, i, 13, DISP_FRONTBUFFER);
+//     // Convert setpoint value to ASCII
+//     utoa((uint8_t) *(uint8_t *) pgm_read_word(&setpoint_variables_pointer_array[i + parameter_disp_config]), val, 10);
+//     // Display given value
+//     put_data_to_lcd_buffer(val, 3, i, 15, DISP_FRONTBUFFER, 0);
+// }
+
+void display_parameters( uint8_t max_amount, uint8_t offset, uint8_t max_offset, void * names_ptr, void * values_ptr, uint8_t names_len, uint8_t values_len, uint8_t values_pos){
+    uint8_t i = 0, j = max_offset;
+    unsigned char val[5];
+
+    if ( offset > 0 )
+        if ( max_amount % offset < max_offset )
+            j = max_amount % offset;
+    for (; i < j; i++){
+        // Display parameter name
+        put_data_to_lcd_buffer(&names_ptr[(i + offset) * names_len], names_len, i, 0, disp_active_buffer, 1);
+        // Display ':' separator
+        put_one_char(':', 1, i, names_len, disp_active_buffer);
+        // Convert setpoint value to ASCII
+        utoa((uint8_t) *(uint8_t *) pgm_read_word((uint16_t)&values_ptr[(i + offset) << 1]), val, 10);
+        // Display given value
+        put_data_to_lcd_buffer(val, values_len, i, values_pos, disp_active_buffer, 0);
     }
 }
 
@@ -510,8 +544,7 @@ int main( void ){
     // Local variables start
 
     uint8_t actual_character = 0, last_character = 0;
-
-    uint8_t keypad_press_wait = 4, keypad_hold_wait = 3;    
+    uint8_t keypad_press_wait = 4, keypad_hold_wait = 3, key_repeat = 2;    
 
     // Stage State for FSM
     uint8_t stage1_state = STAGE_STATE_WAIT;
@@ -525,7 +558,7 @@ int main( void ){
     //uint16_t stage2_level = 0;
 
     uint8_t stage3_config = 0;     // bits 1:0 [00 - accept all, 01 - accept greater, 10 - accept less, 11 - reject all]
-    // 3:2 [ 0 - no color, 01 - red, 10 - green, 11 - blue ]
+    
     
     uint16_t stage3_level = 0;
 
@@ -533,12 +566,12 @@ int main( void ){
 
     // Local Variables end
 
-
     setup();
     PIN_set(PORTA, PA1);        // Turn on the backlight
 
     disp_clear_buffer(DISP_FRONTBUFFER);
 
+    // Display version and compilation date
     put_data_to_lcd_buffer(&sorter_version, 11, 0, 0, DISP_FRONTBUFFER, 1);
     put_data_to_lcd_buffer(&compilation_date, 11, 1, 0, DISP_FRONTBUFFER, 1);
     
@@ -575,26 +608,16 @@ int main( void ){
 
     disp_clear_buffer(DISP_FRONTBUFFER);
 
+    // Display Devs names
     put_data_to_lcd_buffer(&dev0_name, 14, 0, 0, DISP_FRONTBUFFER, 1);
     put_data_to_lcd_buffer(&dev1_name, 15, 1, 0, DISP_FRONTBUFFER, 1);
     put_data_to_lcd_buffer(&dev2_name, 13, 2, 0, DISP_FRONTBUFFER, 1);
 
-    wait_ms(750);
+    wait_ms(600);
 
     unsigned char val[20];
 
-    EEPROM_variables_config = EEP_VAR_ROM2RAM;
-
-    // check_eeprom_variables();
-    // disp_clear_buffer(DISP_FRONTBUFFER);
-
-    // sprintf(val, "%03u, %03u, %03u, %03u", S_stage1_servo_accept, S_stage1_servo_default, S_stage1_servo_reject, S_stage3_color_switch_hold);
-    // put_data_to_lcd_buffer(val, 18, 0, 0, DISP_FRONTBUFFER, 0);
-
-    // sprintf(val, "%03u, %03u, %03u", S_stage3_in_wait, S_stage3_measure_hold, S_stage3_out_wait);
-    // put_data_to_lcd_buffer(val, 13, 1, 0, DISP_FRONTBUFFER, 0);
-
-    // wait_ms(500);
+    EEPROM_variables_config = EEP_VAR_ROM2RAM;          // Change EEPROM FSM state to load from EEPROM to RAM, i.e. initialize set-point values
 
     for(;;){
         check_eeprom_variables();
@@ -638,12 +661,12 @@ int main( void ){
             menu_state = MENU_STATE_START;
         } else
         if ( menu_state == MENU_STATE_START ){          // Handle "START" selection
-            if ( actual_character == 48 ){
+            if ( actual_character == KEYPAD_ALT_DOWN ){
                 blink_stop();
                 blink_init(1, 3, 14, 3);
                 menu_state = MENU_STATE_SELECT;
             } else 
-            if ( actual_character == 41 ){
+            if ( actual_character == KEYPAD_ALT_SELECT ){
                 blink_stop();
                 menu_state = MENU_STATE_S_ACTIVE;
                 put_one_char(' ', 5, 0, 7, DISP_FRONTBUFFER);
@@ -651,102 +674,85 @@ int main( void ){
                 blink_init(0, 7, 4, 3);
                 sorting_state = 1;
             } else
-            if (  actual_character == 34 ){
+            if ( actual_character == KEYPAD_ALT_UP ){
                 blink_stop();
                 blink_init(3, 6, 9, 3);
                 menu_state = MENU_STATE_PWROFF;
             }
         } else
         if ( menu_state == MENU_STATE_SELECT ){         // Handle "select program" election
-            if ( actual_character == 48 ){
+            if ( actual_character == KEYPAD_ALT_DOWN ){
                 blink_stop();
                 blink_init(2, 6, 9, 3);
                 menu_state = MENU_STATE_CONFIG;
             } else 
-            if ( actual_character == 41 ){
+            if ( actual_character == KEYPAD_ALT_SELECT ){
                 blink_stop();
                 disp_clear_buffer(DISP_FRONTBUFFER);
                 put_data_to_lcd_buffer(&text_select_hint, 20, 3, 0, DISP_FRONTBUFFER, 1);
                 menu_state = MENU_STATE_SEL_ACTIVE;
             } else
-            if (  actual_character == 34 ){
+            if ( actual_character == KEYPAD_ALT_UP ){
                 blink_stop();
                 blink_init(0, 7, 5, 3);
                 menu_state = MENU_STATE_START;
             }
         } else
         if ( menu_state == MENU_STATE_CONFIG ){         // Handle "configure" selection
-            if ( actual_character == 48 ){
+            if ( actual_character == KEYPAD_ALT_DOWN ){
                 blink_stop();
                 blink_init(3, 6, 9, 3);
                 menu_state = MENU_STATE_PWROFF;
             } else 
-            if ( actual_character == 41 ){
+            if ( actual_character == KEYPAD_ALT_SELECT ){
                 menu_state = MENU_STATE_DRAW_CONFIG;
             } else
-            if (  actual_character == 34 ){
+            if ( actual_character == KEYPAD_ALT_UP ){
                 blink_stop();
                 blink_init(1, 3, 14, 3);
                 menu_state = MENU_STATE_SELECT;
             }
         } else
         if ( menu_state == MENU_STATE_PWROFF ){         // Handle "power off" selection
-            if ( actual_character == 48 ){
+            if ( actual_character == KEYPAD_ALT_DOWN ){
                 blink_stop();
                 blink_init(0, 7, 5, 3);
                 menu_state = MENU_STATE_START;
             } else 
-            if ( actual_character == 41 ){
+            if ( actual_character == KEYPAD_ALT_SELECT ){
                 blink_stop();
                 fake_shutdown();
             } else
-            if (  actual_character == 34 ){
+            if ( actual_character == KEYPAD_ALT_UP ){
                 blink_stop();
                 blink_init(2, 6, 9, 3);
                 menu_state = MENU_STATE_CONFIG;
             }
         } else
         if ( menu_state == MENU_STATE_S_ACTIVE ){       // Handle toggle from START to STOP
-            if ( actual_character == 48 ){
+            if ( actual_character == KEYPAD_ALT_DOWN ){
                 blink_stop();
                 blink_init(1, 3, 14, 3);
                 menu_state = MENU_STATE_SELECT;
             } else 
-            if ( actual_character == 41 ){
+            if ( actual_character == KEYPAD_ALT_SELECT ){
                 blink_stop();
                 menu_state = MENU_STATE_START;
                 put_data_to_lcd_buffer(&text_start, 5, 0, 7, DISP_FRONTBUFFER, 1);
                 blink_init(0, 7, 5, 3);
                 sorting_state = 0;
             } else
-            if (  actual_character == 34 ){
+            if ( actual_character == KEYPAD_ALT_UP ){
                 blink_stop();
                 blink_init(3, 6, 9, 3);
                 menu_state = MENU_STATE_PWROFF;
             }    
         } else
         if ( menu_state == MENU_STATE_SEL_ACTIVE ){     // Handle active "select program"
-            if ( actual_character == 41 ){
+            if ( actual_character == KEYPAD_ALT_SELECT ){
                 menu_state = MENU_STATE_DRAW_MAIN;
             }
-            // if ( actual_character == 48 ){
-            //     blink_stop();
-            //     blink_init(1, 3, 14, 3);
-            //     menu_state = MENU_STATE_SELECT;
-            // } else 
-            // if ( actual_character == 41 ){
-            //     blink_stop();
-            //     menu_state = MENU_STATE_START;
-            //     put_data_to_lcd_buffer(&menu0_line0_start, 5, 0, 7, DISP_FRONTBUFFER, 1);
-            //     blink_init(0, 5, 4, 3);
-            // } else
-            // if (  actual_character == 34 ){
-            //     blink_stop();
-            //     blink_init(3, 6, 9, 3);
-            //     menu_state = MENU_STATE_PWROFF;
-            // }
-            // if ( menu_state != MENU_STATE_S_ACTIVE )
-            //     put_data_to_lcd_buffer(&menu0_line0_stop, 4, 0, 7, DISP_FRONTBUFFER, 1);       
+            // TODO     
         } else
         if ( menu_state == MENU_STATE_DRAW_CONFIG ) {       // Draw "configure" screen
             blink_stop();
@@ -790,50 +796,50 @@ int main( void ){
             put_one_char('0' + (sec & 0x0F), 1, 3, 17, DISP_FRONTBUFFER);
 
             if ( menu_state == MENU_STATE_C_ACTIVE || menu_state == MENU_STATE_C_A_PROGRAM ){       // Handle "configure" -> "program" selection
-                if ( actual_character == 34 ){
+                if ( actual_character == KEYPAD_ALT_UP ){
                     blink_stop();
                     blink_init(1, 4, 4, 3);
                     menu_state = MENU_STATE_C_A_EXIT;
                 } else 
-                if ( actual_character == 41 ){
+                if ( actual_character == KEYPAD_ALT_SELECT ){
                     menu_state = MENU_STATE_DRAW_C_PROG;
                 } else
-                if (  actual_character == 48 ){
+                if ( actual_character == KEYPAD_ALT_DOWN ){
                     blink_stop();
                     blink_init(1, 10, 6, 3);
                     menu_state = MENU_STATE_C_A_SYSTEM;
                 }
             } else 
             if ( menu_state == MENU_STATE_C_A_SYSTEM ) {            // Handle "configure" -> "system" selection
-                if ( actual_character == 34 ){
+                if ( actual_character == KEYPAD_ALT_UP ){
                     blink_stop();
                     blink_init(0, 12, 7, 3);
                     menu_state = MENU_STATE_C_A_PROGRAM;
                 } else 
-                if ( actual_character == 41 ){
+                if ( actual_character == KEYPAD_ALT_SELECT ){
                     blink_stop();
                     menu_state = MENU_STATE_C_A_SYSTEM_ACTIVE;
                     disp_clear_buffer(DISP_FRONTBUFFER);
 
                     print_settings_options(DISP_FRONTBUFFER);
                 } else
-                if (  actual_character == 48 ){
+                if ( actual_character == KEYPAD_ALT_DOWN ){
                     blink_stop();
                     blink_init(1, 4, 4, 3);
                     menu_state = MENU_STATE_C_A_EXIT;
                 }
             } else 
             if ( menu_state == MENU_STATE_C_A_EXIT ) {              // Handle "configure" -> "exit" selection
-                if ( actual_character == 34 ){
+                if ( actual_character == KEYPAD_ALT_UP ){
                     blink_stop();
                     blink_init(1, 10, 6, 3);
                     menu_state = MENU_STATE_C_A_SYSTEM;
                 } else 
-                if ( actual_character == 41 ){
+                if ( actual_character == KEYPAD_ALT_SELECT ){
                     blink_stop();
                     menu_state = MENU_STATE_DRAW_MAIN;
                 } else
-                if (  actual_character == 48 ){
+                if ( actual_character == KEYPAD_ALT_DOWN ){
                     blink_stop();
                     blink_init(0, 12, 7, 3);
                     menu_state = MENU_STATE_C_A_PROGRAM;
@@ -856,68 +862,68 @@ int main( void ){
         if ( menu_state == MENU_STATE_C_A_PROGRAM_ACTIVE || menu_state == MENU_STATE_C_A_PRG_A_view || menu_state == MENU_STATE_C_A_PRG_A_config ||
             menu_state == MENU_STATE_C_A_PRG_A_save || menu_state == MENU_STATE_C_A_PRG_A_exit ){          // Handle "configure" -> "program" selection
             if ( menu_state == MENU_STATE_C_A_PROGRAM_ACTIVE || menu_state == MENU_STATE_C_A_PRG_A_view ){      // Handle "configure" -> "program" - > "view" selection
-                if ( actual_character == 34 ){
+                if ( actual_character == KEYPAD_ALT_UP ){
                     blink_stop();
                     blink_init(3, 12, 4, 3);
                     menu_state = MENU_STATE_C_A_PRG_A_exit;
                 } else 
-                if ( actual_character == 41 ){
+                if ( actual_character == KEYPAD_ALT_SELECT ){
                     blink_stop();
                     menu_state = MENU_STATE_C_A_PRG_A_view_A;
                     disp_clear_buffer(DISP_FRONTBUFFER);
                 } else
-                if (  actual_character == 48 ){
+                if ( actual_character == KEYPAD_ALT_DOWN ){
                     blink_stop();
                     blink_init(2, 4, 9, 3);
                     menu_state = MENU_STATE_C_A_PRG_A_config;
                 }
             } else 
             if ( menu_state == MENU_STATE_C_A_PRG_A_config ) {          // Handle "configure" -> "program" - > "configure" selection
-                if ( actual_character == 34 ){
+                if ( actual_character == KEYPAD_ALT_UP ){
                     blink_stop();
                     blink_init(1, 8, 4, 3);
                     menu_state = MENU_STATE_C_A_PRG_A_view;
                 } else 
-                if ( actual_character == 41 ){
+                if ( actual_character == KEYPAD_ALT_SELECT ){
                     blink_stop();
                     menu_state = MENU_STATE_C_A_PRG_A_config_A;
                     disp_clear_buffer(DISP_FRONTBUFFER);
 
                     print_settings_options(DISP_FRONTBUFFER);
                 } else
-                if (  actual_character == 48 ){
+                if ( actual_character == KEYPAD_ALT_DOWN ){
                     blink_stop();
                     blink_init(3, 4, 4, 3);
                     menu_state = MENU_STATE_C_A_PRG_A_save;
                 }
             } else 
             if ( menu_state == MENU_STATE_C_A_PRG_A_save ) {            // Handle "configure" -> "program" - > "save" selection
-                if ( actual_character == 34 ){
+                if ( actual_character == KEYPAD_ALT_UP ){
                     blink_stop();
                     blink_init(2, 4, 9, 3);
                     menu_state = MENU_STATE_C_A_PRG_A_config;
                 } else 
-                if ( actual_character == 41 ){
+                if ( actual_character == KEYPAD_ALT_SELECT ){
                     blink_stop();
                     menu_state = MENU_STATE_DRAW_MAIN;
                 } else
-                if (  actual_character == 48 ){
+                if ( actual_character == KEYPAD_ALT_DOWN ){
                     blink_stop();
                     blink_init(3, 12, 4, 3);
                     menu_state = MENU_STATE_C_A_PRG_A_exit;
                 }
             } else 
             if ( menu_state == MENU_STATE_C_A_PRG_A_exit ) {            // Handle "configure" -> "program" - > "exit" selection
-                if ( actual_character == 34 ){
+                if ( actual_character == KEYPAD_ALT_UP ){
                     blink_stop();
                     blink_init(3, 4, 4, 3);
                     menu_state = MENU_STATE_C_A_PRG_A_save;
                 } else 
-                if ( actual_character == 41 ){
+                if ( actual_character == KEYPAD_ALT_SELECT ){
                     blink_stop();
                     menu_state = MENU_STATE_DRAW_CONFIG;
                 } else
-                if (  actual_character == 48 ){
+                if ( actual_character == KEYPAD_ALT_DOWN ){
                     blink_stop();
                     blink_init(1, 8, 4, 1);
                     menu_state = MENU_STATE_C_A_PRG_A_view;
@@ -929,33 +935,69 @@ int main( void ){
             put_data_to_lcd_buffer(val, 12, 0, 0, DISP_FRONTBUFFER, 0);
             sprintf(val, "red: %05u", red_value);
             put_data_to_lcd_buffer(val, 10, 1, 0, DISP_FRONTBUFFER, 0);
-            //put_one_char('0' + stage1_state, 1, 1, 19, DISP_FRONTBUFFER);
             sprintf(val, "green: %05u", green_value);
             put_data_to_lcd_buffer(val, 12, 2, 0, DISP_FRONTBUFFER, 0);
             sprintf(val, "blue: %05u", blue_value);
             put_data_to_lcd_buffer(val, 11, 3, 0, DISP_FRONTBUFFER, 0);
-            //put_one_char('0' + stage3_state, 3, 1, 19, DISP_FRONTBUFFER);
 
-            if ( actual_character == 41 ){
+            if ( actual_character == KEYPAD_ALT_SELECT ){
                 menu_state = MENU_STATE_DRAW_C_PROG;
             }
         } else
         if ( menu_state == MENU_STATE_C_A_PRG_A_config_A ){
-            if ( actual_character == 41 ){
+            if ( actual_character == KEYPAD_ALT_SELECT ){
+                
+            } else
+            if ( actual_character == KEYPAD_ALT_UP ){
+
+            } else
+            if ( actual_character == KEYPAD_ALT_DOWN ){
+
+            } else
+            if ( actual_character == KEYPAD_KEY_C ){
+
+            } else
+            if ( actual_character == KEYPAD_KEY_D ){
                 menu_state = MENU_STATE_DRAW_C_PROG;
             }
         } else
         if ( menu_state == MENU_STATE_C_A_SYSTEM_ACTIVE ){
-            if ( actual_character == 41 ){
+            utoa(parameter_disp_config & 0x7F, val, 10);
+            put_data_to_lcd_buffer(val, 3, 3, 17, DISP_FRONTBUFFER, 0);
+            if ( ~parameter_disp_config & 0x80 ){
+                display_parameters(EEPROM_VARIABLES_COUNT, parameter_disp_config, 3,
+                parameter_display_names, setpoint_variables_pointer_array, 13, 3, 15);
+                parameter_disp_config |= 0x80;
+            }
+
+            if ( actual_character == KEYPAD_ALT_SELECT ){
+                
+            } else
+            if ( actual_character == KEYPAD_ALT_UP ){
+                //if ( --key_repeat == 0 ){
+                    key_repeat = 2;
+                    parameter_disp_config &= 0x7F;
+                    if ( --parameter_disp_config != 128 )
+                        parameter_disp_config = EEPROM_VARIABLES_COUNT - 3;
+                //}  
+            } else
+            if ( actual_character == KEYPAD_ALT_DOWN ){
+                //if ( --key_repeat == 0 ){
+                    key_repeat = 2;
+                    parameter_disp_config &= 0x7F;
+                    if ( ++parameter_disp_config < EEPROM_VARIABLES_COUNT )
+                        parameter_disp_config = 0;
+                //}  
+            } else
+            if ( actual_character == KEYPAD_KEY_C ){
+
+            } else
+            if ( actual_character == KEYPAD_KEY_D ){
                 menu_state = MENU_STATE_DRAW_CONFIG;
             }
         }
 
-        if ( sorting_state != 0 ){    
-            // sprintf(val, "%03u", stage3_in_wait);
-            // put_data_to_lcd_buffer(val, 3, 3, 0, DISP_FRONTBUFFER, 0);      
-            // sprintf(val, "%03u", stage3_color_switch_hold);
-            // put_data_to_lcd_buffer(val, 3, 3, 17, DISP_FRONTBUFFER, 0); 
+        if ( sorting_state != 0 ){     
             if ( stage1_state == STAGE_STATE_WAIT ){
                 if ( PIN_is_low(PINA, PA4) ) {
                     stage1_in_wait = S_stage1_in_wait;
