@@ -560,6 +560,7 @@ int main( void ){
     // Display version and compilation date
     put_data_to_lcd_buffer(&sorter_version, 11, 0, 0, DISP_FRONTBUFFER, 1);
     put_data_to_lcd_buffer(&compilation_date, 11, 1, 0, DISP_FRONTBUFFER, 1);
+    put_data_to_lcd_buffer(&dev0_name, 14, 3, 0, DISP_FRONTBUFFER, 1);
     
     // Quick color sense LEDs test
     PIN_clear(RED_LED_port, RED_LED_pin);
@@ -592,14 +593,6 @@ int main( void ){
     PIN_set(BLUE_LED_port, BLUE_LED_pin);
     PIN_set(WHITE_LED_port, WHITE_LED_pin);
 
-    disp_clear_buffer(DISP_FRONTBUFFER);
-
-    // Display Devs names
-    put_data_to_lcd_buffer(&dev0_name, 14, 0, 0, DISP_FRONTBUFFER, 1);
-    put_data_to_lcd_buffer(&dev1_name, 15, 1, 0, DISP_FRONTBUFFER, 1);
-    put_data_to_lcd_buffer(&dev2_name, 13, 2, 0, DISP_FRONTBUFFER, 1);
-
-    wait_ms(600);
 
     unsigned char val[20];
 

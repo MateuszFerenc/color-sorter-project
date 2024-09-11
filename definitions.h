@@ -28,7 +28,7 @@
 #define STRINGIFY(x) #x
 #define TOSTRING(x) STRINGIFY(x)
 #define stable_version  0
-#define beta_version    3
+#define beta_version    7
 
 // sense stages ADC channels PORTA
 #define metal_sense_adc 0
@@ -386,8 +386,6 @@ const unsigned char text_goodbye[10] PROGMEM = "Goodbye :)";
 const unsigned char sorter_version[11] PROGMEM = "Sorter v" TOSTRING(stable_version) "." TOSTRING(beta_version);
 const unsigned char compilation_date[11] PROGMEM = __DATE__;
 const unsigned char dev0_name[14] PROGMEM = "Mateusz Ferenc";
-const unsigned char dev1_name[15] PROGMEM = "Ola Bejgerowska";
-const unsigned char dev2_name[13] PROGMEM = "Adam Bartczak";
 
 // EEPROM_VARIABLES_COUNT * 13, 13 due to one parameter name will be limited to 13 characters
 const unsigned char parameter_display_names[ EEPROM_VARIABLES_COUNT * 13 ] PROGMEM = 
