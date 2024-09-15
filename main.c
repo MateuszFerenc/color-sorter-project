@@ -391,6 +391,7 @@ void wait_us( uint8_t us ){
 }
 
 static void fake_shutdown( void ){
+    wdt_disable();
     disp_clear_buffer(DISP_FRONTBUFFER);
     put_data_to_lcd_buffer(&text_goodbye, 10, 2, 5, DISP_FRONTBUFFER, 1);
     wait_ms(150);
@@ -410,18 +411,18 @@ static void fake_shutdown( void ){
     cli();
     TCCR0 = 0;          // Disable timers in last resort
     TCCR2 = 0;
-    //SFIOR |= 0x04;      // Disable all Pull-ups
     
+    wdt_enable(WDTO_15MS);    
 
     PORTC &= 0x0F;
     uint8_t button_hold = 200;
 
     for(;;) {
         wait_ms(5);
+        wdt_reset();
 
         if ( ~(PINB >> 4) & 0x0F ){
             if (--button_hold == 0){
-                wdt_enable(WDTO_15MS);
                 for(;;);
             }
         } else {
@@ -442,41 +443,81 @@ void print_settings_options( unsigned char buffer ){
 }
 
 void check_eeprom_variables( void ) {
-    if ( EEPROM_variables_config == EEP_VAR_RAM2ROM ){
+    if ( EEPROM_FSM_state == EEP_VAR_RAM2ROM ){
         if ( eeprom_is_ready() ){
             if ( EEPROM_variable_count < EEPROM_VARIABLES_COUNT ){
                 eeprom_update_byte( pgm_read_word(&eeprom_variables_pointer_array[EEPROM_variable_count]), (uint8_t) *(uint8_t *) pgm_read_word(&setpoint_variables_pointer_array[EEPROM_variable_count]));
                 EEPROM_variable_count++;
             } else {
-                EEPROM_variables_config = EEP_VAR_NOP;
+                EEPROM_FSM_state = EEP_VAR_NOP;
                 EEPROM_variable_count = 0;
             }
         }
     } else
-    if ( EEPROM_variables_config == EEP_VAR_ROM2RAM ){
+    if ( EEPROM_FSM_state == EEP_VAR_ROM2RAM ){
         for (EEPROM_variable_count = 0; EEPROM_variable_count < EEPROM_VARIABLES_COUNT ; EEPROM_variable_count++){
             * (uint8_t *) pgm_read_word(&setpoint_variables_pointer_array[EEPROM_variable_count]) = eeprom_read_byte( pgm_read_word(&eeprom_variables_pointer_array[EEPROM_variable_count]));
         }
-        EEPROM_variables_config = EEP_VAR_NOP;
+        EEPROM_FSM_state = EEP_VAR_NOP;
         EEPROM_variable_count = 0;
     }
 }
 
 
-void display_parameters( uint8_t max_amount, uint8_t offset, uint8_t max_offset, void * names_ptr, void * values_ptr, uint8_t names_len, uint8_t values_len, uint8_t values_pos){
-    uint8_t i = 0, j = max_offset;
+void display_parameters( uint8_t max_amount, uint8_t offset, uint8_t max_offset, void * names_ptr, void * values_ptr, uint8_t names_len, uint8_t values_len, uint8_t values_pos, uint8_t values_src, uint8_t values_word_select){
+    uint8_t i = 0;
+    uint16_t temp_val;
     unsigned char val[5];
 
-    if ( offset > 0 )
-        if ( max_amount % offset < max_offset )
-            j = max_amount % offset;
-    for (; i < j; i++){
+    if ( offset > ( max_amount - max_offset ) )
+        offset = max_amount - max_offset;
+    for (; i < max_offset; i++){
+        temp_val = 0;
+
+        // clear line
+        put_one_char(' ', 20, i, 0, disp_active_buffer);
+        
         // Display parameter name
         put_data_to_lcd_buffer(&names_ptr[(i + offset) * names_len], names_len, i, 0, disp_active_buffer, 1);
+
         // Display ':' separator
         put_one_char(':', 1, i, names_len, disp_active_buffer);
-        // Convert setpoint value to ASCII
-        utoa((uint8_t) *(uint8_t *) pgm_read_word((uint16_t)&values_ptr[(i + offset) << 1]), val, 10);
+
+        // Get 16-bit value from array in specified manner
+        if ( (values_src & MASK_LOAD_PARAMETERS_MODE ) == __LOAD_PARAMETERS_DIRECT ){
+            if ( values_src == LOAD_PARAMETERS_SRC_RAM_DIRECT )
+                temp_val = ( values_word_select )? *((uint16_t *) values_ptr + i + offset ) : *((uint8_t *) values_ptr + i + offset );
+            else
+            if ( values_src == LOAD_PARAMETERS_SRC_ROM_DIRECT )
+                temp_val = ( values_word_select )? pgm_read_word(values_ptr + (( i + offset ) << 1 )) : pgm_read_byte( (uint16_t) values_ptr + (( i + offset ) << 1 ));
+            else
+            if ( values_src == LOAD_PARAMETERS_SRC_EEP_DIRECT )
+                temp_val = ( values_word_select )? eeprom_read_word(values_ptr + i + offset) : eeprom_read_byte(values_ptr + i + offset);
+        } else
+        if ( (values_src & MASK_LOAD_PARAMETERS_MODE ) == __LOAD_PARAMETERS_VIA_RAM ) {
+            if ( values_src == LOAD_PARAMETERS_SRC_RAM_VIA_RAM_TABLE )
+                temp_val = ( values_word_select )? (uint16_t) *(uint16_t *) &values_ptr[ i + offset ] : (uint8_t) *(uint16_t *) &values_ptr[ i + offset ];
+            else
+            if ( values_src == LOAD_PARAMETERS_SRC_ROM_VIA_RAM_TABLE )
+                temp_val = ( values_word_select )? pgm_read_word( &values_ptr[ ( i + offset ) << 1 ] ) : pgm_read_byte( (uint16_t) &values_ptr[ ( i + offset ) << 1 ] );
+            else
+            if ( values_src == LOAD_PARAMETERS_SRC_EEP_VIA_RAM_TABLE )
+                temp_val = ( values_word_select )? eeprom_read_word( &values_ptr[ i + offset ] ) : eeprom_read_byte( &values_ptr[ i + offset ] );
+        } else
+        if ( (values_src & MASK_LOAD_PARAMETERS_MODE ) == __LOAD_PARAMETERS_VIA_ROM ){
+            if ( values_src == LOAD_PARAMETERS_SRC_RAM_VIA_ROM_TABLE )
+                temp_val = ( values_word_select )? (uint16_t) *(uint16_t *) pgm_read_word( (uint16_t) &values_ptr[ ( i + offset ) << 1 ] ) : (uint8_t) *(uint8_t *) pgm_read_word( (uint16_t) &values_ptr[ ( i + offset ) << 1 ] );
+            else
+            if ( values_src == LOAD_PARAMETERS_SRC_ROM_VIA_ROM_TABLE )
+                temp_val = ( values_word_select )? pgm_read_word( pgm_read_word( (uint16_t) &values_ptr[ ( i + offset ) << 1 ]) ) : pgm_read_byte( pgm_read_word( (uint16_t) &values_ptr[ ( i + offset ) << 1 ]) );
+            else
+            if ( values_src == LOAD_PARAMETERS_SRC_EEP_VIA_ROM_TABLE )
+                temp_val = ( values_word_select )? eeprom_read_word( pgm_read_word( (uint16_t) &values_ptr[ i + offset ] ) ) : eeprom_read_byte( pgm_read_word( (uint16_t) &values_ptr[ i + offset ] ) );
+        }
+
+        // Convert value to ASCII
+        utoa(temp_val, val, 10);
+
         // Display given value
         put_data_to_lcd_buffer(val, values_len, i, values_pos, disp_active_buffer, 0);
     }
@@ -527,6 +568,8 @@ static void setup( void ){
 }
 
 int main( void ){
+    wdt_disable();
+
     // Local variables start
 
     uint8_t actual_character = 0, last_character = 0;
@@ -596,9 +639,13 @@ int main( void ){
 
     unsigned char val[20];
 
-    EEPROM_variables_config = EEP_VAR_ROM2RAM;          // Change EEPROM FSM state to load from EEPROM to RAM, i.e. initialize set-point values
+    EEPROM_FSM_state = EEP_VAR_ROM2RAM;          // Change EEPROM FSM state to load from EEPROM to RAM, i.e. initialize set-point values
+
+    wdt_enable(WDTO_1S);
 
     for(;;){
+        wdt_reset();
+
         check_eeprom_variables();
 
         wait_ms(5);
@@ -800,6 +847,7 @@ int main( void ){
                     menu_state = MENU_STATE_C_A_SYSTEM_ACTIVE;
                     disp_clear_buffer(DISP_FRONTBUFFER);
 
+                    parameter_disp_config = 0;
                     print_settings_options(DISP_FRONTBUFFER);
                 } else
                 if ( actual_character == KEYPAD_ALT_DOWN ){
@@ -941,11 +989,11 @@ int main( void ){
             }
         } else
         if ( menu_state == MENU_STATE_C_A_SYSTEM_ACTIVE ){
-            utoa(parameter_disp_config & 0x7F, val, 10);
+            sprintf(val, "%03u", parameter_disp_config & 0x7F);
             put_data_to_lcd_buffer(val, 3, 3, 17, DISP_FRONTBUFFER, 0);
             if ( ~parameter_disp_config & 0x80 ){
                 display_parameters(EEPROM_VARIABLES_COUNT, parameter_disp_config, 3,
-                parameter_display_names, setpoint_variables_pointer_array, 13, 3, 15);
+                parameter_display_names, setpoint_variables_pointer_array, 13, 3, 15, LOAD_PARAMETERS_SRC_RAM_VIA_ROM_TABLE, BYTE_LOAD_DISPLAY_PARAMETERS);
                 parameter_disp_config |= 0x80;
             }
 
@@ -953,20 +1001,16 @@ int main( void ){
                 
             } else
             if ( actual_character == KEYPAD_ALT_UP ){
-                //if ( --key_repeat == 0 ){
-                    key_repeat = 2;
-                    parameter_disp_config &= 0x7F;
-                    if ( --parameter_disp_config != 128 )
-                        parameter_disp_config = EEPROM_VARIABLES_COUNT - 3;
-                //}  
+                parameter_disp_config &= 0x7F;
+                if ( parameter_disp_config == 0 )
+                    parameter_disp_config = EEPROM_VARIABLES_COUNT - 3;
+                else
+                    parameter_disp_config--;                   
             } else
             if ( actual_character == KEYPAD_ALT_DOWN ){
-                //if ( --key_repeat == 0 ){
-                    key_repeat = 2;
-                    parameter_disp_config &= 0x7F;
-                    if ( ++parameter_disp_config < EEPROM_VARIABLES_COUNT )
-                        parameter_disp_config = 0;
-                //}  
+                parameter_disp_config &= 0x7F;
+                if ( ++parameter_disp_config > (EEPROM_VARIABLES_COUNT - 3) )
+                   parameter_disp_config = 0;
             } else
             if ( actual_character == KEYPAD_KEY_C ){
 

@@ -133,6 +133,28 @@
 #define EEP_PRG_SIZE                    17
 #define EEP_PRG_AMOUNT                  20
 
+#define MASK_LOAD_PARAMETERS_SOURCE                                 (uint8_t) 3
+#define MASK_LOAD_PARAMETERS_MODE                                   (uint8_t) 12
+
+#define __LOAD_PARAMETERS_DIRECT                             (uint8_t) 0
+#define __LOAD_PARAMETERS_VIA_RAM                            (uint8_t) 4
+#define __LOAD_PARAMETERS_VIA_ROM                            (uint8_t) 8
+
+#define LOAD_PARAMETERS_SRC_RAM_DIRECT             __LOAD_PARAMETERS_DIRECT + (uint8_t) 0
+#define LOAD_PARAMETERS_SRC_ROM_DIRECT             __LOAD_PARAMETERS_DIRECT + (uint8_t) 1
+#define LOAD_PARAMETERS_SRC_EEP_DIRECT             __LOAD_PARAMETERS_DIRECT + (uint8_t) 2
+
+#define LOAD_PARAMETERS_SRC_RAM_VIA_RAM_TABLE           __LOAD_PARAMETERS_VIA_RAM + LOAD_PARAMETERS_SRC_RAM_DIRECT
+#define LOAD_PARAMETERS_SRC_ROM_VIA_RAM_TABLE           __LOAD_PARAMETERS_VIA_RAM + LOAD_PARAMETERS_SRC_ROM_DIRECT
+#define LOAD_PARAMETERS_SRC_EEP_VIA_RAM_TABLE           __LOAD_PARAMETERS_VIA_RAM + LOAD_PARAMETERS_SRC_EEP_DIRECT
+
+#define LOAD_PARAMETERS_SRC_RAM_VIA_ROM_TABLE           __LOAD_PARAMETERS_VIA_ROM + LOAD_PARAMETERS_SRC_RAM_DIRECT
+#define LOAD_PARAMETERS_SRC_ROM_VIA_ROM_TABLE           __LOAD_PARAMETERS_VIA_ROM + LOAD_PARAMETERS_SRC_ROM_DIRECT
+#define LOAD_PARAMETERS_SRC_EEP_VIA_ROM_TABLE           __LOAD_PARAMETERS_VIA_ROM + LOAD_PARAMETERS_SRC_EEP_DIRECT
+
+#define BYTE_LOAD_DISPLAY_PARAMETERS                        (uint8_t) 0
+#define WORD_LOAD_DISPLAY_PARAMETERS                        (uint8_t) 1
+
 // Preprocessor definitions end
 
 /* J1 - Metal stage
@@ -229,7 +251,7 @@ unsigned char get_keypad_character( void );
 static void fake_shutdown( void );
 void print_settings_options( unsigned char buffer );
 void check_eeprom_variables( void );
-void display_parameters( uint8_t max_amount, uint8_t offset, uint8_t max_offset, void * names_ptr, void * values_ptr, uint8_t names_len, uint8_t values_len, uint8_t values_pos);
+void display_parameters( uint8_t max_amount, uint8_t offset, uint8_t max_offset, void * names_ptr, void * values_ptr, uint8_t names_len, uint8_t values_len, uint8_t values_pos, uint8_t values_src, uint8_t values_word_select);
 
 // Functions declarations end
 
@@ -264,7 +286,7 @@ unsigned char blink_buffer[16];
 
 uint8_t sorting_state = 0;      // bits 7:4 - error code, 3:0 - sorting stage info
 
-uint8_t EEPROM_variables_config = EEP_VAR_NOP;    // 0xF0 : ROM -> RAM, 0x0F : RAM -> ROM
+uint8_t EEPROM_FSM_state = EEP_VAR_NOP;    // 0xF0 : ROM -> RAM, 0x0F : RAM -> ROM
 uint8_t EEPROM_variable_count = 0;
 
 
