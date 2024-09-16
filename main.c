@@ -465,13 +465,13 @@ void check_eeprom_variables( void ) {
 
 
 void display_parameters( uint8_t max_amount, uint8_t offset, uint8_t max_offset, void * names_ptr, void * values_ptr, uint8_t names_len, uint8_t values_len, uint8_t values_pos, uint8_t values_src, uint8_t values_word_select){
-    uint8_t i = 0;
     uint16_t temp_val;
     unsigned char val[5];
 
     if ( offset > ( max_amount - max_offset ) )
         offset = max_amount - max_offset;
-    for (; i < max_offset; i++){
+
+    for (uint8_t i = 0; i < max_offset; i++){
         temp_val = 0;
 
         // clear line
@@ -848,6 +848,7 @@ int main( void ){
                     disp_clear_buffer(DISP_FRONTBUFFER);
 
                     parameter_disp_config = 0;
+                    value_selected = 0;
                     print_settings_options(DISP_FRONTBUFFER);
                 } else
                 if ( actual_character == KEYPAD_ALT_DOWN ){
@@ -989,34 +990,55 @@ int main( void ){
             }
         } else
         if ( menu_state == MENU_STATE_C_A_SYSTEM_ACTIVE ){
-            sprintf(val, "%03u", parameter_disp_config & 0x7F);
-            put_data_to_lcd_buffer(val, 3, 3, 17, DISP_FRONTBUFFER, 0);
+            //sprintf(val, "%01u:%02u", value_selected & 0x7F, parameter_disp_config & 0x7F);
+            //put_data_to_lcd_buffer(val, 4, 3, 16, DISP_FRONTBUFFER, 0);
             if ( ~parameter_disp_config & 0x80 ){
+                blink_stop();
                 display_parameters(EEPROM_VARIABLES_COUNT, parameter_disp_config, 3,
                 parameter_display_names, setpoint_variables_pointer_array, 13, 3, 15, LOAD_PARAMETERS_SRC_RAM_VIA_ROM_TABLE, BYTE_LOAD_DISPLAY_PARAMETERS);
                 parameter_disp_config |= 0x80;
+            }
+
+            if ( ~value_selected & 0x80 ){
+                blink_stop();
+                blink_init(value_selected, 15, 3, 3);
+                value_selected |= 0x80;
             }
 
             if ( actual_character == KEYPAD_ALT_SELECT ){
                 
             } else
             if ( actual_character == KEYPAD_ALT_UP ){
-                parameter_disp_config &= 0x7F;
-                if ( parameter_disp_config == 0 )
-                    parameter_disp_config = EEPROM_VARIABLES_COUNT - 3;
-                else
-                    parameter_disp_config--;                   
+                value_selected &= 0x7F;
+                if ( ( value_selected & 0x7F ) == 0 ){
+                    parameter_disp_config &= 0x7F;
+                    if ( parameter_disp_config == 0 ){
+                        parameter_disp_config = EEPROM_VARIABLES_COUNT - 3;
+                        value_selected = 2;
+                    } else
+                        parameter_disp_config--; 
+                } else {
+                    value_selected--;
+                }                 
             } else
             if ( actual_character == KEYPAD_ALT_DOWN ){
-                parameter_disp_config &= 0x7F;
-                if ( ++parameter_disp_config > (EEPROM_VARIABLES_COUNT - 3) )
-                   parameter_disp_config = 0;
+                value_selected &= 0x7F;
+                if ( ( value_selected & 0x7F ) == 2 ){
+                    parameter_disp_config &= 0x7F;
+                    if ( ++parameter_disp_config > (EEPROM_VARIABLES_COUNT) ){
+                        value_selected = 0;
+                        parameter_disp_config = 0;
+                    } 
+                } else {
+                    value_selected++;
+                }  
             } else
             if ( actual_character == KEYPAD_KEY_C ){
 
             } else
             if ( actual_character == KEYPAD_KEY_D ){
                 menu_state = MENU_STATE_DRAW_CONFIG;
+                blink_stop();
             }
         }
 

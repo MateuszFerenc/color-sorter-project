@@ -3,24 +3,40 @@ OBJS=main.o
 DIR=Bin
 
 DEVICE=atmega16a
-SPEED=14745600UL
+SPEED=14745600
 
 OBJCOPY=avr-objcopy
 AVRSIZE=avr-size
 AVROBJDUMP=avr-objdump
 
 CC=avr-gcc
-CFLAGS=-DF_CPU=${SPEED} -mmcu=${DEVICE} -Os -Wfatal-errors -Wall
+CFLAGS += -DF_CPU=${SPEED}UL
+CFLAGS += -mmcu=${DEVICE}
+CFLAGS += -Os
+CFLAGS += -Wfatal-errors
+CFLAGS += -Wall
+CFLAGS += -funsigned-char
+CFLAGS += -funsigned-bitfields
+CFLAGS += -fpack-struct
+CFLAGS += -fshort-enums
+CFLAGS += -ffunction-sections
+CFLAGS += -fdata-sections
+CFLAGS += -Wl,--gc-sections
 
-PROGRAMMER=USBasp
-AVRDUDE=avrdude
+PROGRAMMER = USBasp
+AVRDUDE = avrdude
+AVRDUDE_FLAGS = -c ${PROGRAMMER} -p ${DEVICE}
 
 DEL=del
 
-all: ${OBJS} ${BIN}.elf install
+all: elf hex install
+
+elf: ${OBJS}
+hex: ${BIN}.elf
 
 %.elf: %.c
 		${CC} ${CFLAGS} $< -o ${DIR}/$@
+		${DEL} ${BIN}.o
 
 %.hex: %.elf
 		${OBJCOPY} -R .eeprom -R .fuse -R .lock -R .signature -R .user_signatures -O ihex ${DIR}/$< ${DIR}/$@
@@ -34,14 +50,16 @@ debug:
 		${AVROBJDUMP} -h -Ss ${DIR}/${BIN}.elf > ${DIR}/${BIN}.lst
 
 install: ${BIN}.hex
-		${AVRDUDE} -c ${PROGRAMMER} -p ${DEVICE} -U flash:w:${DIR}/$<
+		${AVRDUDE} ${AVRDUDE_FLAGS} -U flash:w:${DIR}/$<
 
 program_eeprom:	${BIN}.eep
-		${AVRDUDE} -c ${PROGRAMMER} -p ${DEVICE} -U eeprom:w:${DIR}/$<
+		${AVRDUDE} ${AVRDUDE_FLAGS} -U eeprom:w:${DIR}/$<
 
 clean:
-	${DEL} ${DIR}/${BIN}.elf ${DIR}/${BIN}.hex ${DIR}/${BIN}.lst ${DIR}/${OBJS}
+	${DEL} "${DIR}\${BIN}.elf" "${DIR}\${BIN}.hex" "${DIR}\${BIN}.lst" "${DIR}\${OBJS}" "${DIR}\${BIN}.eep"
+
+
+.DEFAULTGOAL: all
+.PHONY: all elf hex eeprom debug install program_eeprom clean
 
 # avrdude -c USBasp -p atmega16a	-U lfuse:w:0xFE:m	-U hfuse:w:0xC1:m
-
-# TODO fix directories

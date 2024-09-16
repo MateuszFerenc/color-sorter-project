@@ -310,6 +310,7 @@ uint8_t S_stage3_in_wait, S_stage3_measure_hold, S_stage3_out_wait;
 uint8_t S_stage3_color_switch_hold; // 3:2 [ 0 - no color, 01 - red, 10 - green, 11 - blue ]
 
 uint8_t parameter_disp_config = 0;   // bit 7 - display [ 0 - ready to display, 1 - already displayed, waiting for refresh], bits 6:0 - starting offset of parameter [0 - 127]
+uint8_t value_selected = 0;     // bit 7 - select [ 0 - ready to select, 1 - already selected, waiting for refresh], bits 6:0 - starting offset of parameter [0 - 127]
 
 uint8_t program_id = 0, program_name[6] = "TEST", program_stage1_conf = 0, program_stage3_conf = 5, program_stage1_val[2] = {0x02, 0x58}, program_stage3_red[2] = {0x03, 20}, program_stage3_grn[2] = { 0, 0}, program_stage3_blu[2] = { 0, 0};
 
