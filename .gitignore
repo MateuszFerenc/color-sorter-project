@@ -9,5 +9,7 @@
 *.lst
 *.eep
 
+**/Bin
+
 **/.vscode
 **/venv

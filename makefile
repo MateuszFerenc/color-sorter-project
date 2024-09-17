@@ -29,14 +29,12 @@ AVRDUDE_FLAGS = -c ${PROGRAMMER} -p ${DEVICE}
 
 DEL=del
 
-all: elf hex install
+all: hex install
 
-elf: ${OBJS}
 hex: ${BIN}.elf
 
 %.elf: %.c
-		${CC} ${CFLAGS} $< -o ${DIR}/$@
-		${DEL} ${BIN}.o
+		${CC} ${CFLAGS} $< -o ${DIR}/$@ 2>${DIR}/compilation_output.txt
 
 %.hex: %.elf
 		${OBJCOPY} -R .eeprom -R .fuse -R .lock -R .signature -R .user_signatures -O ihex ${DIR}/$< ${DIR}/$@
@@ -56,7 +54,7 @@ program_eeprom:	${BIN}.eep
 		${AVRDUDE} ${AVRDUDE_FLAGS} -U eeprom:w:${DIR}/$<
 
 clean:
-	${DEL} "${DIR}\${BIN}.elf" "${DIR}\${BIN}.hex" "${DIR}\${BIN}.lst" "${DIR}\${OBJS}" "${DIR}\${BIN}.eep"
+	${DEL} "${DIR}\${BIN}.elf" "${DIR}\${BIN}.hex" "${DIR}\${BIN}.lst" "${DIR}\${OBJS}" "${DIR}\${BIN}.eep" "${DIR}\compilation_output.txt"
 
 
 .DEFAULTGOAL: all

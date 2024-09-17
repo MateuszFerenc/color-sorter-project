@@ -71,29 +71,29 @@
 #define BUZZER_pin          PD2
 #define BUZZER_port         PORTD
 
-#define MENU_STATE_DRAW_MAIN         0
-#define MENU_STATE_START        1
-#define MENU_STATE_SELECT       3
-#define MENU_STATE_CONFIG       4
-#define MENU_STATE_PWROFF       5
-#define MENU_STATE_S_ACTIVE         6
-#define MENU_STATE_SEL_ACTIVE        7
-#define MENU_STATE_C_ACTIVE      8
-#define MENU_STATE_C_A_PROGRAM              10
-#define MENU_STATE_C_A_SYSTEM              11
-#define MENU_STATE_C_A_EXIT              12
-#define MENU_STATE_C_A_PROGRAM_ACTIVE       13
-#define MENU_STATE_C_A_SYSTEM_ACTIVE       14
-#define MENU_STATE_C_A_PRG_A_view            15
-#define MENU_STATE_C_A_PRG_A_config            16
-#define MENU_STATE_C_A_PRG_A_save            17
-#define MENU_STATE_C_A_PRG_A_exit            18
-#define MENU_STATE_C_A_SYS_ACTIVE            19
-#define MENU_STATE_C_A_PRG_A_view_A            20
-#define MENU_STATE_C_A_PRG_A_config_A            21
-#define MENU_STATE_DRAW_CONFIG                  22
-#define MENU_STATE_DRAW_C_PROG                  23
-#define MENU_STATE_DRIVE                255
+#define MENU_STATE_DRAW_MAIN                        (uint8_t) 0
+#define MENU_STATE_START                            (uint8_t) 1
+#define MENU_STATE_SELECT                           (uint8_t) 3
+#define MENU_STATE_CONFIG                           (uint8_t) 4
+#define MENU_STATE_PWROFF                           (uint8_t) 5
+#define MENU_STATE_S_ACTIVE                         (uint8_t) 6
+#define MENU_STATE_SEL_ACTIVE                       (uint8_t) 7
+#define MENU_STATE_C_ACTIVE                         (uint8_t) 8
+#define MENU_STATE_C_A_PROGRAM                      (uint8_t) 10
+#define MENU_STATE_C_A_SYSTEM                       (uint8_t) 11
+#define MENU_STATE_C_A_EXIT                         (uint8_t) 12
+#define MENU_STATE_C_A_PROGRAM_ACTIVE               (uint8_t) 13
+#define MENU_STATE_C_A_SYSTEM_ACTIVE                (uint8_t) 14
+#define MENU_STATE_C_A_PRG_A_view                   (uint8_t) 15
+#define MENU_STATE_C_A_PRG_A_config                 (uint8_t) 16
+#define MENU_STATE_C_A_PRG_A_save                   (uint8_t) 17
+#define MENU_STATE_C_A_PRG_A_exit                   (uint8_t) 18
+#define MENU_STATE_C_A_SYS_ACTIVE                   (uint8_t) 19
+#define MENU_STATE_C_A_PRG_A_view_A                 (uint8_t) 20
+#define MENU_STATE_C_A_PRG_A_config_A               (uint8_t) 21
+#define MENU_STATE_DRAW_CONFIG                      (uint8_t) 22
+#define MENU_STATE_DRAW_C_PROG                      (uint8_t) 23
+#define MENU_STATE_DRIVE                            (uint8_t) 255
 
 #define STAGE_STATE_WAIT                (uint8_t) 0
 #define STAGE_STATE_IN                  (uint8_t) 1
@@ -122,7 +122,7 @@
 #define KEYPAD_KEY_8                    (uint8_t) 16
 #define KEYPAD_KEY_9                    (uint8_t) 18
 #define KEYPAD_KEY_star                 (uint8_t) 22
-#define KEYPAD_KEY_#                    (uint8_t) 25
+#define KEYPAD_KEY_hash                    (uint8_t) 25
 
 #define KEYPAD_ALT_UP                   KEYPAD_KEY_A + KEYPAD_KEY_2
 #define KEYPAD_ALT_DOWN                 KEYPAD_KEY_A + KEYPAD_KEY_8
@@ -312,6 +312,8 @@ uint8_t S_stage3_color_switch_hold; // 3:2 [ 0 - no color, 01 - red, 10 - green,
 uint8_t parameter_disp_config = 0;   // bit 7 - display [ 0 - ready to display, 1 - already displayed, waiting for refresh], bits 6:0 - starting offset of parameter [0 - 127]
 uint8_t value_selected = 0;     // bit 7 - select [ 0 - ready to select, 1 - already selected, waiting for refresh], bits 6:0 - starting offset of parameter [0 - 127]
 
+uint8_t active_program = 0;     // 0 - no program is active, any value other than zero means ID of active program
+
 uint8_t program_id = 0, program_name[6] = "TEST", program_stage1_conf = 0, program_stage3_conf = 5, program_stage1_val[2] = {0x02, 0x58}, program_stage3_red[2] = {0x03, 20}, program_stage3_grn[2] = { 0, 0}, program_stage3_blu[2] = { 0, 0};
 
 //  Variables end
@@ -320,15 +322,15 @@ uint8_t program_id = 0, program_name[6] = "TEST", program_stage1_conf = 0, progr
 // EEPROM data region start, "E_" prefix means eeprom data region
 
 // Stage Servos Limits
-static EEMEM uint8_t  E_stage1_servo_accept = 65, E_stage1_servo_default = 53, E_stage1_servo_reject = 43;
+const EEMEM uint8_t  E_stage1_servo_accept = 65, E_stage1_servo_default = 53, E_stage1_servo_reject = 43;
 //uint8_t EEMEM E_stage2_servo_accept = 0, E_stage2_servo_default = 0, E_stage2_servo_reject = 0;
-static EEMEM uint8_t E_stage3_servo_accept = 68, E_stage3_servo_default = 56, E_stage3_servo_reject = 46;
+const EEMEM uint8_t E_stage3_servo_accept = 68, E_stage3_servo_default = 56, E_stage3_servo_reject = 46;
 
-static EEMEM uint8_t E_stage1_in_wait = 50, E_stage1_measure_hold = 20, E_stage1_out_wait = 30;
+const EEMEM uint8_t E_stage1_in_wait = 50, E_stage1_measure_hold = 20, E_stage1_out_wait = 30;
 //uint8_t EEMEM E_stage2_in_wait = 2, E_stage2_measure_hold = 100, E_stage2_out_wait = 2;
-static EEMEM uint8_t E_stage3_in_wait = 30, E_stage3_measure_hold = 90, E_stage3_out_wait = 30, E_stage3_color_switch_hold = 30;
+const EEMEM uint8_t E_stage3_in_wait = 30, E_stage3_measure_hold = 90, E_stage3_out_wait = 30, E_stage3_color_switch_hold = 30;
 
-static EEMEM uint8_t program_content_array[ EEP_PRG_AMOUNT * EEP_PRG_SIZE ] = { 0, 'T', 'E', 'S', 'T', ' ', ' ', 0, 1, 0, 0, 0x3, 0x20, 0, 0, 0, 0};
+//const EEMEM uint8_t program_content_array[ EEP_PRG_AMOUNT * EEP_PRG_SIZE ] = { 0, 'T', 'E', 'S', 'T', ' ', ' ', 0, 1, 0, 0, 0x3, 0x20, 0, 0, 0, 0};
 // test program [id: 0, name: TEST, stage1_conf: 0 (accept all), stage2_conf: 1 (accept greater), stage1_val: 0, stage3_val_red: 800dec (320hex), stage3_val_grn: 0, stage3_val_blu: 0]
 
 // EEPROM data region end
@@ -336,9 +338,9 @@ static EEMEM uint8_t program_content_array[ EEP_PRG_AMOUNT * EEP_PRG_SIZE ] = { 
 
 //  Constants start
 
-const uint8_t * const program_parameters_array [ 8 ] PROGMEM = {
-    &program_id, &program_name, &program_stage1_conf, &program_stage3_conf, &program_stage1_val, &program_stage3_red, &program_stage3_grn, &program_stage3_blu
-};
+// const uint8_t * const program_parameters_array [ 8 ] PROGMEM = {
+//     &program_id, &program_name[0], &program_stage1_conf, &program_stage3_conf, &program_stage1_val[0], &program_stage3_red[0], &program_stage3_grn[0], &program_stage3_blu[0]
+// };
 
 const uint8_t * const eeprom_variables_pointer_array [ EEPROM_VARIABLES_COUNT ] PROGMEM = { 
     &E_stage1_servo_accept, &E_stage1_servo_default, &E_stage1_servo_reject, 
@@ -358,6 +360,8 @@ const uint8_t * const setpoint_variables_pointer_array [ EEPROM_VARIABLES_COUNT 
     //  &stage2_in_wait, &stage2_measure_hold, &stage2_out_wait,
     &S_stage3_in_wait, &S_stage3_measure_hold, &S_stage3_out_wait, &S_stage3_color_switch_hold
 };
+
+const uint8_t program_memory_sizes [ 8 ] PROGMEM = { 1, 6, 1, 1, 2, 2, 2, 2 };
 
 const unsigned char keypad_num0_keys[5] PROGMEM = "-12-3";
 const unsigned char keypad_num1_keys[5] PROGMEM = "-45-6";
@@ -425,5 +429,18 @@ const unsigned char parameter_display_names[ EEPROM_VARIABLES_COUNT * 13 ] PROGM
     "stg3_meas_hld"\
     "stg3_out_wait"\
     "stg3_color_sw";
+
+const uint8_t program_content_array[ 10 * EEP_PRG_SIZE ] PROGMEM = { 
+    1, 'T', 'E', 'S', 'T', ' ', ' ', 0, 1, 0, 0, 0x3, 0x20, 0, 0, 0, 0,
+    2, 'R', 'E', 'D', ' ', ' ', ' ', 0, 1, 0, 0, 0x3, 0x20, 0, 0, 0, 0,
+    2, 'G', 'R', 'E', 'E', 'N', ' ', 0, 1, 0, 0, 0x3, 0x20, 0, 0, 0, 0,
+    4, 'B', 'L', 'U', 'E', ' ', ' ', 0, 1, 0, 0, 0x3, 0x20, 0, 0, 0, 0,
+    5, 'E', 'M', 'P', 'T', 'Y', ' ', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    6, 'E', 'M', 'P', 'T', 'Y', ' ', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    7, 'E', 'M', 'P', 'T', 'Y', ' ', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    8, 'E', 'M', 'P', 'T', 'Y', ' ', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    9, 'E', 'M', 'P', 'T', 'Y', ' ', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    10, 'E', 'M', 'P', 'T', 'Y', ' ', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+};
 
 //  Constans end
