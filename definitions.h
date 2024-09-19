@@ -28,7 +28,7 @@
 #define STRINGIFY(x) #x
 #define TOSTRING(x) STRINGIFY(x)
 #define stable_version  0
-#define beta_version    7
+#define beta_version    9
 
 // sense stages ADC channels PORTA
 #define metal_sense_adc 0
@@ -398,7 +398,7 @@ const unsigned char text_select_hint [20] PROGMEM = "1.LD 2.DEL 3.SV 4.NW";
 // Menu 2 strings
 const unsigned char text_configure0 [10] PROGMEM = "Configure:";
 #define text_program *(text_select_program + 7)
-//const unsigned char text_program[7] PROGMEM = "program";
+
 const unsigned char text_system [6] PROGMEM = "system";
 const unsigned char text_exit [4] PROGMEM = "exit";
 const unsigned char text_status0 [7] PROGMEM = "Status:";
@@ -444,7 +444,7 @@ const uint8_t program_content_array [  11 * EEP_PRG_SIZE  ] PROGMEM = {
 // ID, NAME,                            , stg1, stg3, stg1 val  , stg3 red  , stg3 green, stg3 blue
     0, 'D', 'I', 'S', 'A', 'B', 'L', 'E', 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     1, 'T', 'E', 'S', 'T', ' ', ' ', ' ', 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    2, 'R', 'E', 'D', ' ', ' ', ' ', ' ', 0x00, 0x65, 0x00, 0x00, 0x03, 0x20, 0x03, 0x52, 0x03, 0x20,
+    2, 'R', 'E', 'D', ' ', ' ', ' ', ' ', 0x00, 0x05, 0x00, 0x00, 0x03, 0x20, 0x03, 0x52, 0x03, 0x20,
     3, 'G', 'R', 'E', 'E', 'N', ' ', ' ', 0x00, 0x59, 0x00, 0x00, 0x03, 0x3E, 0x03, 0x34, 0x03, 0x20,
     4, 'B', 'L', 'U', 'E', ' ', ' ', ' ', 0x00, 0x65, 0x00, 0x00, 0x03, 0x20, 0x03, 0x34, 0x03, 0x3E,
     5, 'M', 'E', 'T', '0', 'Y', 'E', 'S', 0x02, 0x03, 0x02, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
