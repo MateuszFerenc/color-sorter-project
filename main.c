@@ -135,14 +135,15 @@ ISR(TIMER0_COMP_vect){
     if ( disp_state == DISP_STATE_NOP ){
         if ( ( disp_buffers_dirty || disp_column_counter ) && disp_operation == DISP_STATE_NOP ){
             if ( disp_column_counter == 0 ){
-                for (unsigned char buff_idx = 0; buff_idx < 4; buff_idx++ ){
+                unsigned buff_switch_offset = ( disp_active_buffer == DISP_BACKBUFFER )? 4 : 0;
+                for (unsigned char buff_idx = buff_switch_offset; buff_idx < ( 4 + buff_switch_offset ); buff_idx++ ){
                     if ( ( disp_buffers_dirty >> buff_idx ) & 1 ){
                         disp_buffer_pointer = (unsigned char *)disp_linear_buff + (unsigned char)(buff_idx * 20);
                         disp_column_counter = 20;
                         disp_buffers_dirty &= ~( 1 << buff_idx );
                         disp_state = DISP_STATE_MCURSOR;
                         currentCol = 0;
-                        currentRow = buff_idx;
+                        currentRow = buff_idx % 4;
                         disp_temp_data = 0x80 | lcdRowStart[currentRow];
                         break;
                     }
@@ -245,7 +246,7 @@ void put_data_to_lcd_buffer( void * data, uint8_t length, uint8_t row, uint8_t c
     disp_buffers_dirty |= 1 << ( ( buffer / 20 ) + row );
 }
 
-uint8_t disp_swap_buffers(void){
+uint8_t disp_swap_buffers( void ){
     if ( disp_active_buffer == DISP_FRONTBUFFER ){
         disp_active_buffer = DISP_BACKBUFFER;
         disp_buffers_dirty = 0xF0;
@@ -253,6 +254,10 @@ uint8_t disp_swap_buffers(void){
         disp_active_buffer = DISP_FRONTBUFFER;
         disp_buffers_dirty = 0x0F;
     }
+    return disp_active_buffer;
+}
+
+static uint8_t disp_active_buffer_get( void ){
     return disp_active_buffer;
 }
 
@@ -523,6 +528,29 @@ void display_parameters( uint8_t max_amount, uint8_t offset, uint8_t max_offset,
     }
 }
 
+void display_prompt(uint8_t type, void * text, uint8_t text_length, uint8_t buffer){
+    blink_stop();
+    disp_clear_buffer(buffer);
+    put_one_char(255, 16, 0, 2, buffer);
+    put_one_char(255, 16, 1, 2, buffer);
+    put_one_char(255, 16, 2, 2, buffer);
+    put_one_char(255, 16, 3, 2, buffer);
+
+    if ( type == 1 )
+        put_data_to_lcd_buffer(&text_warning, 7, 0, 6, buffer, 1);
+    else
+    if ( type == 2 )
+        put_data_to_lcd_buffer(&text_err, 3, 0, 8, buffer, 1);
+    else
+        put_data_to_lcd_buffer(&text_info, 4, 0, 8, buffer, 1);
+
+    put_data_to_lcd_buffer(text, text_length, 2, ((20 - text_length) / 2), buffer, 1);
+
+    if ( disp_active_buffer_get() != buffer ){
+        disp_swap_buffers();
+    }
+}
+
 static void setup( void ){
     cli();
     //USART_Init(96);        // UART - 9600 Baudrate
@@ -580,16 +608,16 @@ int main( void ){
     //uint8_t stage2_state = STAGE_STATE_WAIT;
     uint8_t stage3_state = STAGE_STATE_WAIT;
 
-    uint8_t stage1_config = program_stage1_conf;     // bits 1:0 [00 - accept all, 01 - accept greater, 10 - accept less, 11 - reject all]
-    uint16_t stage1_level = ( program_stage1_val[0] << 8 ) | program_stage1_val[1];
+    uint8_t stage1_config = 0;     // bits 1:0 [00 - accept all, 01 - accept greater, 10 - accept less, 11 - reject all]
+    uint16_t stage1_level = 0;
 
     //uint8_t stage2_config = 0;
     //uint16_t stage2_level = 0;
 
-    uint8_t stage3_config = program_stage3_conf;     // bits 1:0 [00 - accept all, 01 & 10 - ignore, 11 - reject all], bits pairs 3:2, 5:4, 6:7 rely to Red, Green, Blue [00 & 11 - ignore, 01 - accept greater, 10 - accept less]
+    uint8_t stage3_config = 0;     // bits 1:0 [00 - accept all, 01 - logic AND between selections, 10 - logic OR between selections, 11 - reject all], bits pairs 3:2, 5:4, 6:7 rely to Red, Green, Blue [00 & 11 - ignore, 01 - accept greater, 10 - accept less]
     
     
-    uint16_t stage3_red_level = ( program_stage3_red[0] << 8 ) | program_stage3_red[1], stage3_green_level = ( program_stage3_grn[0] << 8 ) | program_stage3_grn[1], stage3_blue_level = ( program_stage3_blu[0] << 8 ) | program_stage3_blu[1];
+    uint16_t stage3_red_level = 0, stage3_green_level = 0, stage3_blue_level = 0;
 
     uint16_t red_value = 0, green_value = 0, blue_value = 0;
 
@@ -669,22 +697,30 @@ int main( void ){
                 keypad_hold_wait = 3;
         }
 
+        if ( menu_state == MENU_STATE_DRIVE ){
+            if ( --prompt_time == 0 ){
+                disp_swap_buffers();
+                menu_state = MENU_STATE_DRAW_MAIN;      // TODO goto last FSM state
+            }
+        } else
         if ( menu_state == MENU_STATE_DRAW_MAIN ){      // Draw main menu (0) screen
             disp_clear_buffer(DISP_FRONTBUFFER);
 
             if ( sorting_state == 0 ){
                 put_data_to_lcd_buffer(&text_start, 5, 0, 7, DISP_FRONTBUFFER, 1);
                 blink_init(0, 7, 5, 3);     // period = 640ms
+                menu_state = MENU_STATE_START;
             } else {
                 put_data_to_lcd_buffer(&text_stop, 4, 0, 7, DISP_FRONTBUFFER, 1);
                 blink_init(0, 7, 4, 3);     // period = 640ms
+                menu_state = MENU_STATE_S_ACTIVE;
             }
             
             put_data_to_lcd_buffer(&text_select_program, 14, 1, 3, DISP_FRONTBUFFER, 1);
             put_data_to_lcd_buffer(&text_configure, 9, 2, 6, DISP_FRONTBUFFER, 1);
             put_data_to_lcd_buffer(&text_power_off, 9, 3, 6, DISP_FRONTBUFFER, 1);
             
-            menu_state = MENU_STATE_START;
+            
         } else
         if ( menu_state == MENU_STATE_START ){          // Handle "START" selection
             if ( actual_character == KEYPAD_ALT_DOWN ){
@@ -700,6 +736,10 @@ int main( void ){
                     put_data_to_lcd_buffer(&text_stop, 4, 0, 7, DISP_FRONTBUFFER, 1);
                     blink_init(0, 7, 4, 3);
                     sorting_state = 1;
+                } else {
+                    display_prompt(1, &text_no_program, 11, DISP_BACKBUFFER);
+                    menu_state = MENU_STATE_DRIVE;
+                    prompt_time = 100;
                 }
             } else
             if ( actual_character == KEYPAD_ALT_UP ){
@@ -781,34 +821,41 @@ int main( void ){
             if ( ~value_selected & 0x80 ){
                 // Clear currently displayed line
                 put_one_char(' ', 20, 0, 0, DISP_FRONTBUFFER);
-                if ( value_selected ){
-                    // Put program id
-                    utoa(value_selected, val, 10);
-                    put_data_to_lcd_buffer(val, 3, 0, 0, DISP_FRONTBUFFER, 0);
-                    put_one_char(':', 1, 0, 3, DISP_FRONTBUFFER);
-                    put_data_to_lcd_buffer(&program_content_array[1 + (value_selected - 1) * 17 ], 6, 0, 5, DISP_FRONTBUFFER, 1);
 
-                } else {
-                    val[0] = '0';
-                    val[1] = ':';
-                    val[2] = ' ';
-                    val[3] = 'N';
-                    val[4] = 'O';
-                    val[5] = ' ';
-                    val[6] = 'P';
-                    val[7] = 'R';
-                    val[8] = 'O';
-                    val[9] = 'G';
-                    val[10] = 'R';
-                    val[11] = 'A';
-                    val[12] = 'M';
-                    put_data_to_lcd_buffer(val, 13, 0, 0, DISP_FRONTBUFFER, 0);
-                }
+                // Put program id
+                utoa(value_selected, val, 10);
+                put_data_to_lcd_buffer(val, 3, 0, 0, DISP_FRONTBUFFER, 0);
+
+                // Separator
+                put_one_char(':', 1, 0, 3, DISP_FRONTBUFFER);
+
+                // Program name
+                put_data_to_lcd_buffer(&program_content_array[1 + value_selected * 18  ], 7, 0, 5, DISP_FRONTBUFFER, 1); //+ ( value_selected )? 8 : 0
+
+                //sprintf(val, "stg1 cfg: 0x%02x", pgm_read_byte(&program_content_array[ (9 + value_selected * 18) ]));
+                //put_data_to_lcd_buffer(val, 14, 1, 0, DISP_FRONTBUFFER, 0);
                 value_selected |= 0x80;
             }
 
             if ( actual_character == KEYPAD_ALT_SELECT ){
                 active_program = value_selected & 0x7F;
+                if ( active_program ){
+                    uint16_t offset = active_program * 18; //+ 8
+                    stage1_config = pgm_read_byte(&program_content_array[ (8 + offset) ]);
+                    stage1_level = pgm_read_byte(&program_content_array[ (10 + offset) ]) << 8;
+                    stage1_level |= pgm_read_byte(&program_content_array[ (11 + offset) ]);
+                    stage3_config = pgm_read_byte(&program_content_array[ (9 + offset) ]);
+                    stage3_red_level = pgm_read_byte(&program_content_array[ (12 + offset) ]) << 8;
+                    stage3_red_level |= pgm_read_byte(&program_content_array[ (13 + offset) ]);
+                    stage3_green_level = pgm_read_byte(&program_content_array[ (14 + offset) ]) << 8;
+                    stage3_green_level |= pgm_read_byte(&program_content_array[ (15 + offset) ]);
+                    stage3_blue_level = pgm_read_byte(&program_content_array[ (16 + offset) ]) << 8;
+                    stage3_blue_level |= pgm_read_byte(&program_content_array[ (17 + offset) ]);
+                }
+
+                display_prompt(0, &text_program_loaded, 14, DISP_BACKBUFFER);
+                menu_state = MENU_STATE_DRIVE;
+                prompt_time = 100;
             } else
             if ( actual_character == KEYPAD_ALT_UP ){
                 value_selected &= 0x7F;
@@ -966,7 +1013,55 @@ int main( void ){
                     menu_state = MENU_STATE_C_A_PRG_A_config_A;
                     disp_clear_buffer(DISP_FRONTBUFFER);
 
-                    print_settings_options(DISP_FRONTBUFFER);
+                    sprintf(val, "%04x %04x %04x %04x", stage1_level, stage3_red_level, stage3_green_level, stage3_blue_level);
+                    put_data_to_lcd_buffer(val, 19, 0, 0, DISP_FRONTBUFFER, 0);
+
+                    val[0] = 0;
+                    if ( stage1_config == 1 )
+                        val[0] = 2;
+                    else
+                    if ( stage1_config == 2 )
+                        val[0] = 3;
+                    else
+                    if ( stage1_config == 3 )
+                        val[0] = 1;
+                    put_data_to_lcd_buffer(&program_stage_config_display_names[ val[0] * 10 ], 10, 1, 0, DISP_FRONTBUFFER, 1);
+
+                    val[0] = 0;
+                    if ( (stage3_config & 0x03) == 1 )
+                        val[0] = 4;
+                    else
+                    if ( (stage3_config & 0x03) == 2 )
+                        val[0] = 5;
+                    else
+                    if ( (stage3_config & 0x03) == 3 )
+                        val[0] = 1;
+                    put_data_to_lcd_buffer(&program_stage_config_display_names[ val[0] * 10 ], 10, 2, 0, DISP_FRONTBUFFER, 1);
+
+                    val[0] = 6;
+                    if ( (stage3_config & 0x0C) == 4 )
+                        val[0] = 2;
+                    else
+                    if ( (stage3_config & 0x0C) == 8 )
+                        val[0] = 3;
+                    put_data_to_lcd_buffer(&program_stage_config_display_names[ val[0] * 10 ], 8, 2, 12, DISP_FRONTBUFFER, 1);
+
+                    val[0] = 6;
+                    if ( (stage3_config & 0x30) == 16 )
+                        val[0] = 2;
+                    else
+                    if ( (stage3_config & 0x30) == 32 )
+                        val[0] = 3;
+                    put_data_to_lcd_buffer(&program_stage_config_display_names[ val[0] * 10 ], 10, 3, 0, DISP_FRONTBUFFER, 1);
+
+                    val[0] = 6;
+                    if ( (stage3_config & 0xC0) == 64 )
+                        val[0] = 2;
+                    else
+                    if ( (stage3_config & 0xC0) == 128 )
+                        val[0] = 3;
+                    put_data_to_lcd_buffer(&program_stage_config_display_names[ val[0] * 10 ], 8, 3, 12, DISP_FRONTBUFFER, 1);
+                    //print_settings_options(DISP_FRONTBUFFER);
                 } else
                 if ( actual_character == KEYPAD_ALT_DOWN ){
                     blink_stop();
@@ -1017,11 +1112,11 @@ int main( void ){
             sprintf(val, "blue: %05u", blue_value);
             put_data_to_lcd_buffer(val, 11, 3, 0, DISP_FRONTBUFFER, 0);
 
-            if ( actual_character == KEYPAD_ALT_SELECT ){
+            if ( actual_character ){
                 menu_state = MENU_STATE_DRAW_C_PROG;
             }
         } else
-        if ( menu_state == MENU_STATE_C_A_PRG_A_config_A ){
+        if ( menu_state == MENU_STATE_C_A_PRG_A_config_A ){     // Handle active "configure" -> "program" - > "view" selection
             if ( actual_character == KEYPAD_ALT_SELECT ){
                 
             } else
@@ -1038,13 +1133,11 @@ int main( void ){
                 menu_state = MENU_STATE_DRAW_C_PROG;
             }
         } else
-        if ( menu_state == MENU_STATE_C_A_SYSTEM_ACTIVE ){
-            //sprintf(val, "%01u:%02u", value_selected & 0x7F, parameter_disp_config & 0x7F);
-            //put_data_to_lcd_buffer(val, 4, 3, 16, DISP_FRONTBUFFER, 0);
+        if ( menu_state == MENU_STATE_C_A_SYSTEM_ACTIVE ){      // Handle active "configure" -> "system" selection
             if ( ~parameter_disp_config & 0x80 ){
                 blink_stop();
                 display_parameters(EEPROM_VARIABLES_COUNT, parameter_disp_config, 3,
-                &parameter_display_names, &setpoint_variables_pointer_array, 13, 3, 15, LOAD_PARAMETERS_SRC_RAM_VIA_ROM_TABLE, BYTE_LOAD_DISPLAY_PARAMETERS);
+                &system_parameters_display_names, &setpoint_variables_pointer_array, 13, 3, 15, LOAD_PARAMETERS_SRC_RAM_VIA_ROM_TABLE, BYTE_LOAD_DISPLAY_PARAMETERS);
                 parameter_disp_config |= 0x80;
             }
 
