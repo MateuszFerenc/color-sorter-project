@@ -1,7 +1,8 @@
 # Projekt zaliczeniowy na przedmiot Architektura Systemów Komputerowych
 
-Jest to realizacja systemu komputerowego wspartego mechanicznymi elementami wykonawczymi.
-Całość kontrolowana przez program spełnia funkcję sortowania kulek po kolorze.
+System komputerowy, wspierany mechanicznymi elementami wykonawczymi, realizuje proces sortowania kulek według koloru.
+
+Całość jest sterowana przez program, który nadzoruje działanie systemu.
 
 
 
